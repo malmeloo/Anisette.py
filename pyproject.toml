@@ -1,0 +1,53 @@
+[project]
+name = "Anisette"
+version = "0.1.0"
+description = "Anisette provider"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "fs>=2.4.16",
+    "httpx>=0.28.1",
+    "pyelftools>=0.31",
+    "unicorn>=2.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "packaging>=24.2",
+    "pre-commit>=4.1.0",
+    "pyright>=1.1.392.post0",
+    "ruff>=0.9.3",
+    "tomli>=2.2.1",
+]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+typeCheckingMode = "standard"
+reportImplicitOverride = true
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "ALL",
+]
+ignore = [
+    "ANN101", # annotations on `self`
+    "ANN102", # annotations on `cls`
+    "FIX002", # resolving TODOs
+
+    "ERA001", # commented out code
+
+    "D203", # one blank line before class docstring
+    "D212", # multi-line docstring start at first line
+    "D105", # docstrings in magic methods
+
+    "S101", # assert statements
+    "S603", # false-positive subprocess call (https://github.com/astral-sh/ruff/issues/4045)
+
+    "PLR2004", # "magic" values >.>
+    "FBT", # boolean "traps"
+]
