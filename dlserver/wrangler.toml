@@ -1,0 +1,13 @@
+name = "anisette-provider"
+main = "./src/index.ts"
+compatibility_date = "2025-02-15"
+send_metrics = false
+
+preview_urls = false
+routes = [
+  { pattern = "anisette.dl.mikealmel.ooo", custom_domain = true }
+]
+
+[[kv_namespaces]]
+binding = "bundles"
+id = "6d46926f29204ab491486e1ce66334d7"

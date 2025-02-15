@@ -4,6 +4,8 @@ pkgs.mkShell {
   packages = with pkgs; [
     python312
     uv
+    nodejs_23
+    wrangler
   ];
 
   shellHook = ''
