@@ -2,77 +2,34 @@ from __future__ import annotations
 
 import base64
 import logging
-import secrets
-import uuid
+from contextlib import ExitStack
 from ctypes import c_ulonglong
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
-from fs import open_fs
-
-from ._adi import ADI
-from ._device import Device
-from ._fs import MemoryFileSystem
+from ._anisette import AnisetteProvider
+from ._device import AnisetteDeviceConfig
+from ._fs import FSCollection
 from ._library import LibraryStore
-from ._session import ProvisioningSession
 from ._util import open_file
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-@dataclass(slots=True)
-class AnisetteDeviceConfig:
-    server_friendly_description: str
-    unique_device_id: str
-    adi_id: str
-    local_user_uuid: str
-
-    @classmethod
-    def generate(cls) -> Self:
-        return cls(
-            server_friendly_description=(
-                "<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>"
-            ),
-            unique_device_id=str(uuid.uuid4()).upper(),
-            adi_id=secrets.token_hex(8).lower(),
-            local_user_uuid=secrets.token_hex(32).upper(),
-        )
-
-
-def _get_device(provisioning_fs: MemoryFileSystem, default_config: AnisetteDeviceConfig) -> Device:
-    device = Device(provisioning_fs)
-    if not device.initialized:
-        logging.info("Initializing device")
-        device.server_friendly_description = default_config.server_friendly_description
-        device.unique_device_identifier = default_config.unique_device_id
-        device.adi_identifier = default_config.adi_id
-        device.local_user_uuid = default_config.local_user_uuid
-
-    return device
-
-
 class Anisette:
-    def __init__(
-        self,
-        lib_store: LibraryStore,
-        provisioning_fs: MemoryFileSystem,
-        device_config: AnisetteDeviceConfig | None = None,
-    ):
-        if device_config is None:
-            device_config = AnisetteDeviceConfig.generate()
+    _FS_LIBS = "libs"
+    _FS_DEVICE = "device"
+    _FS_ANISETTE = "anisette"
+    _FS_CACHE = "cache"
+    _FS = (
+        _FS_LIBS,
+        _FS_DEVICE,
+        _FS_ANISETTE,
+        _FS_CACHE,
+    )
 
-        self._lib_store = lib_store
-        self._provisioning_fs = provisioning_fs
-
-        self._device = _get_device(self._provisioning_fs, device_config)
-        # FIXME: this is ugly, add default property support to device class
-        assert self._device.adi_identifier is not None
-
-        self._adi = ADI(self._provisioning_fs, self._lib_store)
-        self._adi.identifier = self._device.adi_identifier
-
-        self._provisioning_session = ProvisioningSession(self._provisioning_fs, self._adi, self._device)
+    def __init__(self, ani_provider: AnisetteProvider) -> None:
+        self._ani_provider = ani_provider
 
     @classmethod
     def init(
@@ -80,46 +37,42 @@ class Anisette:
         apk_file: BinaryIO | str | Path,
         device_config: AnisetteDeviceConfig | None = None,
     ) -> Self:
-        with open_file(apk_file, "rb") as apk:
-            library_store = LibraryStore.init_from_apk(apk)
-            provisioning_fs = MemoryFileSystem()
+        device_config = device_config or AnisetteDeviceConfig.default()
 
-        return cls(library_store, provisioning_fs, device_config)
+        with open_file(apk_file, "rb") as apk:
+            library_store = LibraryStore.from_apk(apk)
+
+        fs_collection = FSCollection(libs=library_store)
+        ani_provider = AnisetteProvider(fs_collection, device_config)
+
+        return cls(ani_provider)
 
     @classmethod
-    def load(cls, data_file: BinaryIO | str | Path, lib_file: BinaryIO | str | Path | None = None) -> Self:
-        if lib_file is None:
-            lib_file = data_file
+    def load(cls, *files: BinaryIO | str | Path) -> Self:
+        with ExitStack() as stack:
+            file_objs = [stack.enter_context(open_file(f, "rb")) for f in files]
+            ani_provider = AnisetteProvider.load(*file_objs)
 
-        with open_file(data_file, "rb") as f:
-            provisioning_fs = MemoryFileSystem.load(f)
-        with open_file(lib_file, "rb") as f:
-            library_store = LibraryStore.load(f)
-
-        return cls(library_store, provisioning_fs)
+        return cls(ani_provider)
 
     def save(self, data_file: BinaryIO | str | Path, lib_file: BinaryIO | str | Path | None = None) -> None:
-        if lib_file is None or data_file == lib_file:
-            # provisioning FS and lib store have different underlying file systems,
-            # so we need to combine them into a single FS first
-            fs = open_fs("mem://")
-            self._provisioning_fs.copy_into(fs)
-            self._lib_store.copy_into(fs)
+        if lib_file is None:  # save everything to a single bundle
             with open_file(data_file, "wb+") as f:
-                MemoryFileSystem(fs).save(f)
+                self._ani_provider.save(f)
             return
 
+        # save to separate bundles
         with open_file(data_file, "wb+") as f:
-            self._provisioning_fs.save(f)
+            self._ani_provider.save(f, exclude=["libs"])
         with open_file(lib_file, "wb+") as f:
-            self._lib_store.save(f)
+            self._ani_provider.save(f, include=["libs"])
 
     def get_data(self) -> dict[str, Any]:  # FIXME: make TypedDict
         ds_id = c_ulonglong(-2).value
-        if not self._adi.is_machine_provisioned(ds_id):
+        if not self._ani_provider.adi.is_machine_provisioned(ds_id):
             logging.info("Provisioning...")
-            self._provisioning_session.provision(ds_id)
-        otp = self._adi.request_otp(ds_id)
+            self._ani_provider.provisioning_session.provision(ds_id)
+        otp = self._ani_provider.adi.request_otp(ds_id)
 
         # FIXME: return other fields as well
         return {

@@ -1,10 +1,32 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+import secrets
+import uuid
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Self
 
 if TYPE_CHECKING:
-    from ._fs import MemoryFileSystem
+    from ._fs import VirtualFileSystem
+
+
+@dataclass(slots=True)
+class AnisetteDeviceConfig:
+    server_friendly_description: str
+    unique_device_id: str
+    adi_id: str
+    local_user_uuid: str
+
+    @classmethod
+    def default(cls) -> Self:
+        return cls(
+            server_friendly_description=(
+                "<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>"
+            ),
+            unique_device_id=str(uuid.uuid4()).upper(),
+            adi_id=secrets.token_hex(8).lower(),
+            local_user_uuid=secrets.token_hex(32).upper(),
+        )
 
 
 class Device:
@@ -15,7 +37,7 @@ class Device:
 
     _PATH = "device.json"
 
-    def __init__(self, fs: MemoryFileSystem) -> None:
+    def __init__(self, fs: VirtualFileSystem) -> None:
         self._fs = fs
 
         # Attempt to load the JSON

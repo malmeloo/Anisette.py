@@ -21,7 +21,7 @@ from ._structs import c_stat, c_timeval
 from ._util import s_to_u64
 
 if TYPE_CHECKING:
-    from ._fs import MemoryFileSystem
+    from ._fs import VirtualFileSystem
     from ._vm import VM
 
 logging.getLogger(__name__)
@@ -33,7 +33,7 @@ IMPORT_SIZE = 0x1000
 @dataclass()
 class HookContext:
     vm: VM
-    fs: MemoryFileSystem
+    fs: VirtualFileSystem
 
 
 def _hook_empty_stub(ctx: HookContext) -> None:

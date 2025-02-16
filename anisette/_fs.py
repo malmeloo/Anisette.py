@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, BinaryIO, Self, Union
 
 from fs import open_fs
-from fs.copy import copy_file, copy_fs
+from fs.copy import copy_dir, copy_file, copy_fs
 from fs.errors import DirectoryExists, ResourceNotFound
+from fs.memoryfs import MemoryFS
 from fs.tarfs import TarFS
 
 if TYPE_CHECKING:
@@ -36,25 +39,17 @@ class StatResult:
     st_size: int
 
 
-class MemoryFileSystem:
+class VirtualFileSystem:
     def __init__(self, fs: FS | None = None) -> None:
-        if fs is None:
-            fs = open_fs("mem://")
+        fs = fs or open_fs("mem://")
 
         self._fs: FS = fs
 
         self._file_handles: list[IO] = []
 
-    @classmethod
-    def load(cls, file: BinaryIO) -> Self:
-        fs = open_fs("mem://")
-        with TarFS(file) as f:
-            copy_fs(f, fs)
-        return cls(fs)
-
-    def save(self, file: BinaryIO) -> None:
-        with TarFS(file, write=True) as f:
-            copy_fs(self._fs, f)
+    @property
+    def fs(self) -> FS:
+        return self._fs
 
     def copy_from(self, from_fs: FS, from_path: str | None = None, to_path: str | None = None) -> None:
         if from_path is None or to_path is None:
@@ -149,3 +144,52 @@ class MemoryFileSystem:
 
         msg = "Not file and not dir???"
         raise RuntimeError(msg)
+
+
+class FSCollection:
+    def __init__(self, **filesystems: VirtualFileSystem) -> None:
+        self._filesystems = filesystems
+
+    @classmethod
+    def load(cls, *files: BinaryIO) -> Self:
+        filesystems: dict[str, VirtualFileSystem] = {}
+        with ExitStack() as stack:
+            tar_fss = [stack.enter_context(TarFS(f)) for f in files]
+            for tar_fs in tar_fss:  # for each provided file
+                fs_index = json.loads(tar_fs.readtext("fs.json"))
+                for name, path in fs_index.items():  # for each registered filesystem in the file
+                    if name in filesystems:
+                        msg = "Filesystem %s appears in multiple bundles"
+                        logging.warning(msg, name)
+
+                    fs = MemoryFS()
+                    copy_dir(tar_fs, path, fs, ".")
+                    filesystems[name] = VirtualFileSystem(fs)
+        return cls(**filesystems)
+
+    def save(self, file: BinaryIO, include: list[str] | None = None, exclude: list[str] | None = None) -> None:
+        to_save = set(self._filesystems.keys()) if include is None else set(include)
+        if exclude is not None:
+            to_save -= set(exclude)
+
+        with TarFS(file, write=True, compression="bz2") as tar_fs:
+            fs_index: dict[str, str] = {}
+            for name in to_save:
+                logging.debug("Saving %s to FS bundle", name)
+
+                fs = self._filesystems[name]
+                path = f"./{name}"
+                fs_index[name] = path
+                copy_dir(fs.fs, ".", tar_fs, name)
+
+            tar_fs.writetext("fs.json", json.dumps(fs_index))
+
+    def get(self, fs_name: str) -> VirtualFileSystem:
+        if fs_name in self._filesystems:
+            logging.debug("Get FS from collection: %s", fs_name)
+            return self._filesystems[fs_name]
+
+        logging.debug("Create new VFS: %s", fs_name)
+        fs = VirtualFileSystem()
+        self._filesystems[fs_name] = fs
+        return fs

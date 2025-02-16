@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import logging
-from typing import IO, TYPE_CHECKING, BinaryIO
+from typing import IO, TYPE_CHECKING, BinaryIO, Self
 
 from elftools.elf.sections import SymbolTableSection
 from fs.zipfs import ZipFS
 
 from ._arch import Architecture
-from ._fs import MemoryFileSystem
+from ._fs import VirtualFileSystem
 
 if TYPE_CHECKING:
     from elftools.elf.elffile import ELFFile
@@ -73,8 +73,7 @@ class Library:
         return sym.name
 
 
-class LibraryStore(MemoryFileSystem):
-    _PATH = "./libs"
+class LibraryStore(VirtualFileSystem):
     _LIBRARIES = (
         "libstoreservicescore.so",
         "libCoreADI.so",
@@ -84,20 +83,24 @@ class LibraryStore(MemoryFileSystem):
     def __init__(self, fs: FS | None) -> None:
         super().__init__(fs)
 
-        self._fs.makedirs(self._PATH, recreate=True)
-
     def open_library(self, name: str) -> IO:
-        return self.easy_open(f"{self._PATH}/{name}", "rb")
+        return self.easy_open(name, "rb")
+
+    def add_library(self, name: str, data: IO[bytes]) -> None:
+        with self.easy_open(name, "wb+") as f:
+            f.write(data.read())
 
     @classmethod
-    def init_from_apk(cls, file: BinaryIO) -> LibraryStore:
-        fs = cls(None)
+    def from_virtfs(cls, fs: VirtualFileSystem) -> Self:
+        return cls(fs.fs)
+
+    @classmethod
+    def from_apk(cls, file: BinaryIO) -> Self:
+        lib_store = cls(None)
 
         with ZipFS(file) as apk:
             for lib in cls._LIBRARIES:
-                from_path = f"lib/{cls._ARCH.value}/{lib}"
-                to_path = f"{cls._PATH}/{lib}"
+                with apk.open(f"lib/{cls._ARCH.value}/{lib}", "rb") as f:
+                    lib_store.add_library(lib, f)
 
-                fs.copy_from(apk, from_path, to_path)
-
-        return fs
+        return lib_store

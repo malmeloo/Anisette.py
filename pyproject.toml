@@ -50,4 +50,7 @@ ignore = [
 
     "PLR2004", # "magic" values >.>
     "FBT", # boolean "traps"
+
+    "TD",
+    "FIX",
 ]

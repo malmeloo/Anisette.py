@@ -41,7 +41,7 @@ from ._library import (
 from ._util import round_up
 
 if TYPE_CHECKING:
-    from ._fs import MemoryFileSystem
+    from ._fs import VirtualFileSystem
 
 logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ IMPORT_SIZE = 0x1000
 
 
 class VM:
-    def __init__(self, uc: Uc, fs: MemoryFileSystem, lib_store: LibraryStore) -> None:
+    def __init__(self, uc: Uc, fs: VirtualFileSystem, lib_store: LibraryStore) -> None:
         self._uc = uc
         self._fs = fs
 
@@ -82,7 +82,7 @@ class VM:
         return _new_hook
 
     @classmethod
-    def create(cls, fs: MemoryFileSystem, lib_store: LibraryStore, arch: Architecture) -> VM:
+    def create(cls, fs: VirtualFileSystem, lib_store: LibraryStore, arch: Architecture) -> VM:
         # Startup a unicorn-engine instance as VM backend
         if arch == Architecture.X86:
             uc = Uc(UC_ARCH_X86, UC_MODE_32)

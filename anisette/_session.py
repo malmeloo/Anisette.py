@@ -14,7 +14,7 @@ import httpx
 if TYPE_CHECKING:
     from ._adi import ADI
     from ._device import Device
-    from ._fs import MemoryFileSystem
+    from ._fs import VirtualFileSystem
 
 ENABLE_CACHE = False
 
@@ -30,9 +30,7 @@ def time() -> str:
 
 
 class ProvisioningSession:
-    _CACHE_PATH = "./cache"
-
-    def __init__(self, fs: MemoryFileSystem, adi: ADI, device: Device) -> None:
+    def __init__(self, fs: VirtualFileSystem, adi: ADI, device: Device) -> None:
         self._fs = fs
         self.adi = adi
         self.device = device
@@ -59,10 +57,8 @@ class ProvisioningSession:
             "X-Apple-Client-App-Name": "Setup",
         }
 
-        self._fs.mkdir(self._CACHE_PATH)
-
     def _open_cache(self, key: str, mode: str) -> IO:
-        return self._fs.easy_open(f"{self._CACHE_PATH}/{key}", mode)
+        return self._fs.easy_open(key, mode)
 
     def _get(self, url: str, extra_headers: dict[str, str], cache_key: str | None = None) -> bytes:
         if ENABLE_CACHE and cache_key is not None:
@@ -74,7 +70,7 @@ class ProvisioningSession:
         if cache_key is not None:
             with self._open_cache(f"{cache_key}-head", "w") as f:
                 json.dump(headers, f, indent=2)
-            with self._open_cache(f"{cache_key}", "wb") as f:
+            with self._open_cache(cache_key, "wb") as f:
                 f.write(response.content)
         return response.content
 
@@ -88,9 +84,9 @@ class ProvisioningSession:
         if cache_key is not None:
             with self._open_cache(f"{cache_key}-head", "w") as f:
                 json.dump(headers, f, indent=2)
-            with self._open_cache(f"{cache_key}", "w") as f:
+            with self._open_cache(cache_key, "w") as f:
                 f.write(data)
-            with self._open_cache(f"{cache_key}", "wb") as f:
+            with self._open_cache(cache_key, "wb") as f:
                 f.write(response.content)
         return response.content
 
@@ -141,7 +137,7 @@ class ProvisioningSession:
         cpim = self.adi.start_provisioning(ds_id, spim)
         # FIXME: scope (failure) try { adi.destroyProvisioning(cpim.session); } catch(Throwable) {}
 
-        logging.debug("cpim: %X", cpim.cpim)
+        logging.debug("cpim: %s", cpim.cpim)
 
         extra_headers = {
             "X-Apple-I-Client-Time": time(),

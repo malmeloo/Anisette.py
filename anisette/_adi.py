@@ -8,7 +8,7 @@ from ._util import u_to_s32
 from ._vm import VM, Architecture
 
 if TYPE_CHECKING:
-    from ._fs import MemoryFileSystem
+    from ._fs import VirtualFileSystem
     from ._library import LibraryStore
 
 
@@ -29,7 +29,7 @@ class OneTimePassword:
 class ADI:
     _PATH: str = "./anisette/"
 
-    def __init__(self, fs: MemoryFileSystem, lib_store: LibraryStore) -> None:
+    def __init__(self, fs: VirtualFileSystem, lib_store: LibraryStore) -> None:
         self.__vm = VM.create(fs, lib_store, Architecture.ARM64)
 
         self._provisioning_path: str | None = None
