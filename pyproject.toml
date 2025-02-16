@@ -16,6 +16,7 @@ dev = [
     "packaging>=24.2",
     "pre-commit>=4.1.0",
     "pyright>=1.1.392.post0",
+    "pytest>=8.3.4",
     "ruff>=0.9.3",
     "tomli>=2.2.1",
 ]
@@ -53,4 +54,9 @@ ignore = [
 
     "TD",
     "FIX",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
 ]
