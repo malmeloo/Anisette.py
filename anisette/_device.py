@@ -37,22 +37,32 @@ class Device:
 
     _PATH = "device.json"
 
-    def __init__(self, fs: VirtualFileSystem) -> None:
+    def __init__(self, fs: VirtualFileSystem, default_config: AnisetteDeviceConfig) -> None:
         self._fs = fs
 
         # Attempt to load the JSON
         try:
             with self._fs.easy_open(self._PATH, "r") as f:
                 data = json.load(f)
-            self._initialized = True
         except FileNotFoundError:
             data = {}
-            self._initialized = False
 
-        self._unique_device_identifier: str | None = data.get(self._UNIQUE_DEVICE_IDENTIFIER_JSON)
-        self._server_friendly_description: str | None = data.get(self._SERVER_FRIENDLY_DESCRIPTION_JSON)
-        self._adi_identifier = data.get(self._ADI_IDENTIFIER_JSON)
-        self._local_user_uuid = data.get(self._LOCAL_USER_UUID_JSON)
+        self._unique_device_identifier: str = data.get(
+            self._UNIQUE_DEVICE_IDENTIFIER_JSON,
+            default_config.unique_device_id,
+        )
+        self._server_friendly_description: str = data.get(
+            self._SERVER_FRIENDLY_DESCRIPTION_JSON,
+            default_config.server_friendly_description,
+        )
+        self._adi_identifier = data.get(
+            self._ADI_IDENTIFIER_JSON,
+            default_config.adi_id,
+        )
+        self._local_user_uuid = data.get(
+            self._LOCAL_USER_UUID_JSON,
+            default_config.local_user_uuid,
+        )
 
     def write(self) -> None:
         # Save to JSON
@@ -65,44 +75,18 @@ class Device:
         with self._fs.easy_open(self._PATH, "w") as f:
             json.dump(data, f)
 
-    # FIXME: setters for all properties and they auto-write in the original implementation
-
     @property
-    def initialized(self) -> bool:
-        return self._initialized
-
-    @property
-    def unique_device_identifier(self) -> str | None:
+    def unique_device_identifier(self) -> str:
         return self._unique_device_identifier
 
-    @unique_device_identifier.setter
-    def unique_device_identifier(self, value: str) -> None:
-        self._unique_device_identifier = value
-        self.write()
-
     @property
-    def server_friendly_description(self) -> str | None:
+    def server_friendly_description(self) -> str:
         return self._server_friendly_description
 
-    @server_friendly_description.setter
-    def server_friendly_description(self, value: str) -> None:
-        self._server_friendly_description = value
-        self.write()
-
     @property
-    def adi_identifier(self) -> str | None:
+    def adi_identifier(self) -> str:
         return self._adi_identifier
 
-    @adi_identifier.setter
-    def adi_identifier(self, value: str) -> None:
-        self._adi_identifier = value
-        self.write()
-
     @property
-    def local_user_uuid(self) -> str | None:
+    def local_user_uuid(self) -> str:
         return self._local_user_uuid
-
-    @local_user_uuid.setter
-    def local_user_uuid(self, value: str) -> None:
-        self._local_user_uuid = value
-        self.write()

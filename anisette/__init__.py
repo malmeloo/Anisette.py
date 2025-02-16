@@ -17,17 +17,6 @@ if TYPE_CHECKING:
 
 
 class Anisette:
-    _FS_LIBS = "libs"
-    _FS_DEVICE = "device"
-    _FS_ANISETTE = "anisette"
-    _FS_CACHE = "cache"
-    _FS = (
-        _FS_LIBS,
-        _FS_DEVICE,
-        _FS_ANISETTE,
-        _FS_CACHE,
-    )
-
     def __init__(self, ani_provider: AnisetteProvider) -> None:
         self._ani_provider = ani_provider
 
@@ -35,23 +24,21 @@ class Anisette:
     def init(
         cls,
         apk_file: BinaryIO | str | Path,
-        device_config: AnisetteDeviceConfig | None = None,
+        default_device_config: AnisetteDeviceConfig | None = None,
     ) -> Self:
-        device_config = device_config or AnisetteDeviceConfig.default()
-
         with open_file(apk_file, "rb") as apk:
             library_store = LibraryStore.from_apk(apk)
 
         fs_collection = FSCollection(libs=library_store)
-        ani_provider = AnisetteProvider(fs_collection, device_config)
+        ani_provider = AnisetteProvider(fs_collection, default_device_config)
 
         return cls(ani_provider)
 
     @classmethod
-    def load(cls, *files: BinaryIO | str | Path) -> Self:
+    def load(cls, *files: BinaryIO | str | Path, default_device_config: AnisetteDeviceConfig | None = None) -> Self:
         with ExitStack() as stack:
             file_objs = [stack.enter_context(open_file(f, "rb")) for f in files]
-            ani_provider = AnisetteProvider.load(*file_objs)
+            ani_provider = AnisetteProvider.load(*file_objs, default_device_config=default_device_config)
 
         return cls(ani_provider)
 
