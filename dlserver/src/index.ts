@@ -73,6 +73,7 @@ export default {
         const arch = url.searchParams.get("arch");
         const version = url.searchParams.get("version");
 
+        if (url.pathname === "/apk") return Response.redirect(APPLEMUSIC_APK_URL, 302);
         if (url.pathname !== "/libs") return new Response("Not found", {status: 404});
         if (!arch) return new Response("Architecture missing", {status: 400});
 
