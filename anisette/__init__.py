@@ -7,13 +7,14 @@ from ctypes import c_ulonglong
 from typing import TYPE_CHECKING, Any, BinaryIO, Self
 
 from ._anisette import AnisetteProvider
-from ._device import AnisetteDeviceConfig
 from ._fs import FSCollection
 from ._library import LibraryStore
 from ._util import open_file
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from ._device import AnisetteDeviceConfig
 
 
 class Anisette:

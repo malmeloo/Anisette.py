@@ -27,8 +27,6 @@ class OneTimePassword:
 
 
 class ADI:
-    _PATH: str = "./anisette/"
-
     def __init__(self, fs: VirtualFileSystem, lib_store: LibraryStore) -> None:
         self.__vm = VM.create(fs, lib_store, Architecture.ARM64)
 
@@ -54,10 +52,8 @@ class ADI:
         self.__pADIDispose = ssc_library.resolve_symbol_by_name("jk24uiwqrg")
         self.__pADIOTPRequest = ssc_library.resolve_symbol_by_name("qi864985u0")
 
-        # FIXME: provisioning path should not be settable at runtime, just force it to a value
-        fs.mkdir(self._PATH)
-        self.provisioning_path = self._PATH
-        self.load_library(self._PATH)
+        self.provisioning_path = "."
+        self.load_library(".")
 
     @property
     def provisioning_path(self) -> str | None:
@@ -110,8 +106,8 @@ class ADI:
         )
 
         logging.debug("0x%X", session)
-        logging.debug(persistent_token_metadata.hex(), len(persistent_token_metadata))
-        logging.debug(trust_key.hex(), len(trust_key))
+        logging.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
+        logging.debug("Trust key: %s (len: %d)", trust_key.hex(), len(trust_key))
 
         logging.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
         assert ret == 0

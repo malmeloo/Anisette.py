@@ -64,6 +64,8 @@ class Device:
             default_config.local_user_uuid,
         )
 
+        self.write()
+
     def write(self) -> None:
         # Save to JSON
         data = {

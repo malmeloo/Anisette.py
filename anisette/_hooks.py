@@ -225,10 +225,6 @@ def _hook_open(ctx: HookContext) -> None:
     # time.sleep(2.0)
     # assert(False)
 
-    assert path in [
-        "./anisette/adi.pb",
-    ]
-
     # Return fildes
     fildes = ctx.fs.open(path, oflag)
     ctx.vm.reg_write(UC_ARM64_REG_X0, fildes)
