@@ -32,8 +32,7 @@ def time() -> str:
 class ProvisioningSession:
     def __init__(self, fs: VirtualFileSystem, adi: ADI, device: Device) -> None:
         self._fs = fs
-        self.adi = adi
-        self.device = device
+        self._adi = adi
 
         self._http = httpx.Client(verify=get_ssl_context())
 
@@ -134,7 +133,7 @@ class ProvisioningSession:
 
         spim = base64.b64decode(spim_str)
 
-        cpim = self.adi.start_provisioning(ds_id, spim)
+        cpim = self._adi.start_provisioning(ds_id, spim)
         # FIXME: scope (failure) try { adi.destroyProvisioning(cpim.session); } catch(Throwable) {}
 
         logging.debug("cpim: %s", cpim.cpim)
@@ -169,4 +168,4 @@ class ProvisioningSession:
         persistent_token_metadata = base64.b64decode(spim_response["ptm"])
         trust_key = base64.b64decode(spim_response["tk"])
 
-        self.adi.end_provisioning(cpim.session, persistent_token_metadata, trust_key)
+        self._adi.end_provisioning(cpim.session, persistent_token_metadata, trust_key)
