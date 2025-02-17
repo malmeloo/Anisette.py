@@ -23,6 +23,8 @@ class Anisette:
     def __init__(self, ani_provider: AnisetteProvider) -> None:
         self._ani_provider = ani_provider
 
+        self._ds_id = c_ulonglong(-2).value
+
     @classmethod
     def init(
         cls,
@@ -45,24 +47,26 @@ class Anisette:
 
         return cls(ani_provider)
 
-    def save(self, data_file: BinaryIO | str | Path, lib_file: BinaryIO | str | Path | None = None) -> None:
-        if lib_file is None:  # save everything to a single bundle
-            with open_file(data_file, "wb+") as f:
-                self._ani_provider.save(f)
-            return
-
-        # save to separate bundles
-        with open_file(data_file, "wb+") as f:
+    def save_provisioning(self, file: BinaryIO | str | Path) -> None:
+        with open_file(file, "wb+") as f:
             self._ani_provider.save(f, exclude=["libs"])
-        with open_file(lib_file, "wb+") as f:
+
+    def save_libs(self, file: BinaryIO | str | Path) -> None:
+        with open_file(file, "wb+") as f:
             self._ani_provider.save(f, include=["libs"])
 
-    def get_data(self) -> dict[str, Any]:  # FIXME: make TypedDict
-        ds_id = c_ulonglong(-2).value
-        if not self._ani_provider.adi.is_machine_provisioned(ds_id):
+    def save_all(self, file: BinaryIO | str | Path) -> None:
+        with open_file(file, "wb+") as f:
+            self._ani_provider.save(f)
+
+    def provision(self) -> None:
+        if not self._ani_provider.adi.is_machine_provisioned(self._ds_id):
             logging.info("Provisioning...")
-            self._ani_provider.provisioning_session.provision(ds_id)
-        otp = self._ani_provider.adi.request_otp(ds_id)
+            self._ani_provider.provisioning_session.provision(self._ds_id)
+
+    def get_data(self) -> dict[str, Any]:  # FIXME: make TypedDict
+        self.provision()
+        otp = self._ani_provider.adi.request_otp(self._ds_id)
 
         # FIXME: return other fields as well
         return {

@@ -8,7 +8,7 @@ def test_init_save():
 
     assert isinstance(ani.get_data(), dict)
 
-    ani.save("bundle.bin")
+    ani.save_all("bundle.bin")
 
 
 def test_load():
