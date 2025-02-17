@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.9"
 
 [[package]]
@@ -9,6 +10,7 @@ dependencies = [
     { name = "fs" },
     { name = "httpx" },
     { name = "pyelftools" },
+    { name = "typing-extensions" },
     { name = "unicorn" },
 ]
 
@@ -27,6 +29,7 @@ requires-dist = [
     { name = "fs", specifier = ">=2.4.16" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pyelftools", specifier = ">=0.31" },
+    { name = "typing-extensions", specifier = ">=4.12.2" },
     { name = "unicorn", specifier = ">=2.1.1" },
 ]
 

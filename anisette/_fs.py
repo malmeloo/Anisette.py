@@ -7,13 +7,14 @@ import os
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, BinaryIO, Self, Union
+from typing import IO, TYPE_CHECKING, BinaryIO, Union
 
 from fs import open_fs
 from fs.copy import copy_dir, copy_file, copy_fs
 from fs.errors import DirectoryExists, ResourceNotFound
 from fs.memoryfs import MemoryFS
 from fs.tarfs import TarFS
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from fs.base import FS
@@ -33,7 +34,7 @@ def split_path(path: str) -> tuple[str, ...]:
     return Path(path).parts
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class StatResult:
     st_mode: int
     st_size: int

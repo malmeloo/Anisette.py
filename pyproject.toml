@@ -8,6 +8,7 @@ dependencies = [
     "fs>=2.4.16",
     "httpx>=0.28.1",
     "pyelftools>=0.31",
+    "typing-extensions>=4.12.2",
     "unicorn>=2.1.1",
 ]
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import BinaryIO, Self
+from typing import BinaryIO
+
+from typing_extensions import Self
 
 from ._adi import ADI
 from ._device import AnisetteDeviceConfig, Device

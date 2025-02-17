@@ -4,7 +4,9 @@ import base64
 import logging
 from contextlib import ExitStack
 from ctypes import c_ulonglong
-from typing import TYPE_CHECKING, Any, BinaryIO, Self
+from typing import TYPE_CHECKING, Any, BinaryIO
+
+from typing_extensions import Self
 
 from ._anisette import AnisetteProvider
 from ._fs import FSCollection

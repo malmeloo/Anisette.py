@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
-from typing import IO, TYPE_CHECKING, BinaryIO, Self
+from typing import IO, TYPE_CHECKING, BinaryIO
 
 from elftools.elf.sections import SymbolTableSection
 from fs.zipfs import ZipFS
+from typing_extensions import Self
 
 from ._arch import Architecture
 from ._fs import VirtualFileSystem

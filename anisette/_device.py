@@ -4,13 +4,15 @@ import json
 import secrets
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Self
+from typing import TYPE_CHECKING
+
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ._fs import VirtualFileSystem
 
 
-@dataclass(slots=True)
+@dataclass()
 class AnisetteDeviceConfig:
     server_friendly_description: str
     unique_device_id: str

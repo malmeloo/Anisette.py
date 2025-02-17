@@ -12,14 +12,14 @@ if TYPE_CHECKING:
     from ._library import LibraryStore
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class ClientProvisioningIntermediateMetadata:
     adi: ADI
     cpim: bytes
     session: int
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class OneTimePassword:
     adi: ADI
     otp: bytes
