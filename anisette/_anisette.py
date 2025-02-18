@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import BinaryIO
 
 from typing_extensions import Self
@@ -45,9 +46,16 @@ class AnisetteProvider:
 
     @property
     def adi(self) -> ADI:
+        if self._adi and any(usage >= 0.5 for usage in self._adi.alloc_stats):
+            logging.warning("Detected memory leak, restarting VM. Next data fetch may take slightly longer.")
+            self._adi = None
+
         if self._adi is None:
             adi_fs = self._fs_collection.get("adi")
             self._adi = ADI(adi_fs, self.library_store, self.device.adi_identifier)
+
+            if self._provisioning_session is not None:
+                self._provisioning_session.adi = self._adi
 
         return self._adi
 

@@ -56,6 +56,15 @@ class ProvisioningSession:
             "X-Apple-Client-App-Name": "Setup",
         }
 
+    @property
+    def adi(self) -> ADI:
+        return self._adi
+
+    @adi.setter
+    def adi(self, adi: ADI) -> None:
+        logging.debug("Attached new ADI to ProvisioningSession")
+        self._adi = adi
+
     def _open_cache(self, key: str, mode: str) -> IO:
         return self._fs.easy_open(key, mode)
 

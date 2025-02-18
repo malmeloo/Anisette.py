@@ -56,6 +56,10 @@ class ADI:
         self._set_provisioning_path(".")
         self._load_library(".")
 
+    @property
+    def alloc_stats(self) -> tuple[float, float, float]:
+        return self._vm.alloc_stats
+
     def _set_provisioning_path(self, value: str) -> None:
         p_path = self._vm.temp_alloc_data(value.encode("utf-8") + b"\x00")
         self._vm.invoke_cdecl(self.__pADISetProvisioningPath, [p_path])
