@@ -38,7 +38,6 @@ from ._library import (
     Library,
     LibraryStore,
 )
-from ._util import round_up
 
 if TYPE_CHECKING:
     from ._fs import VirtualFileSystem
@@ -52,6 +51,9 @@ STACK_SIZE = 0x100000
 MALLOC_ADDRESS = 0x60000000
 MALLOC_SIZE = 0x1000000
 
+TEMP_ADDRESS = 0x800000000
+TEMP_SIZE = 0x100000
+
 IMPORT_ADDRESS = 0xA0000000
 IMPORT_SIZE = 0x1000
 
@@ -64,11 +66,19 @@ class VM:
         self._lib_store = lib_store
         self._loaded_libs: dict[str, Library] = OrderedDict()
 
-        self._temp_allocator = Allocator(0x800000000, 0x10000000)
+        self._temp_allocator = Allocator(TEMP_ADDRESS, TEMP_SIZE)
         self._malloc_allocator = Allocator(MALLOC_ADDRESS, MALLOC_SIZE)
         self._lib_allocator = Allocator(0x00100000, 0x90000000)
 
         self._errno_address: int | None = None
+
+    @property
+    def alloc_stats(self) -> tuple[float, float, float]:
+        return (
+            self._temp_allocator.alloc_perc,
+            self._malloc_allocator.alloc_perc,
+            self._lib_allocator.alloc_perc,
+        )
 
     @property
     def errno_address(self) -> int | None:
@@ -102,6 +112,9 @@ class VM:
         # Register some memory for malloc
         uc.mem_map(MALLOC_ADDRESS, MALLOC_SIZE)
 
+        # Register memory for temp data
+        uc.mem_map(TEMP_ADDRESS, TEMP_SIZE)
+
         # Register a fake stack
         uc.mem_map(STACK_ADDRESS, STACK_SIZE)
 
@@ -132,7 +145,10 @@ class VM:
         return vm
 
     def malloc(self, length: int) -> int:
-        return self._malloc_allocator.alloc(length)
+        return self._malloc_allocator.alloc(length)[0]
+
+    def free(self, address: int) -> None:
+        return self._malloc_allocator.free(address)
 
     def mem_write(self, address: int, data: bytes) -> None:
         self._uc.mem_write(address, data)
@@ -181,21 +197,23 @@ class VM:
 
     def set_errno(self, value: int) -> None:
         if self._errno_address is None:
-            self._errno_address = self.alloc_temporary(4)
+            self._errno_address = self.temp_alloc(4)
         self.write_u32(self._errno_address, value)
 
-    def alloc_data(self, data: bytes) -> int:
-        length, padding_size = round_up(len(data), 0x1000)
-        address = self._temp_allocator.alloc(length)
+    def temp_alloc_data(self, data: bytes) -> int:
+        data_size = len(data)
+        address, alloc_size = self._temp_allocator.alloc(data_size + 1)
 
-        logging.debug("Allocating at 0x%X; bytes 0x%X/0x%X", address, len(data), length)
-        self._uc.mem_map(address, length)
-        self.mem_write(address, data + b"\xcc" * padding_size)
+        logging.debug("Allocating at 0x%X; bytes 0x%X/0x%X", address, data_size, alloc_size)
+        self.mem_write(address, data + b"\xcc" * alloc_size)
 
         return address
 
-    def alloc_temporary(self, length: int) -> int:
-        return self.alloc_data(b"\xaa" * length)
+    def temp_alloc(self, size: int) -> int:
+        return self.temp_alloc_data(b"\xaa" * size)
+
+    def temp_free(self, address: int) -> None:
+        return self._temp_allocator.free(address)
 
     def invoke_cdecl(self, address: int, args: list[int]) -> int:
         lr = RETURN_ADDRESS
@@ -257,7 +275,7 @@ class VM:
             f.seek(0)
             elf = ELFFile(f)
 
-        chosen_base = self._lib_allocator.alloc(0x10000000)
+        chosen_base = self._lib_allocator.alloc(0x10000000)[0]
 
         library = Library(name, elf, chosen_base, library_index)
 

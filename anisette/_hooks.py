@@ -36,7 +36,9 @@ class HookContext:
     fs: VirtualFileSystem
 
 
-def _hook_empty_stub(ctx: HookContext) -> None:
+def _hook_empty_stub(ctx: HookContext, orig_name: str | None = None) -> None:
+    if orig_name is not None:
+        logging.debug("%s(???) - (empty stubbed)", orig_name)
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
 
@@ -45,6 +47,15 @@ def _hook_malloc(ctx: HookContext) -> None:
     logging.debug("malloc(0x%X)", x0)
     x0 = ctx.vm.malloc(x0)
     ctx.vm.reg_write(UC_ARM64_REG_X0, x0)
+
+
+def _hook_free(ctx: HookContext) -> None:
+    x0 = ctx.vm.reg_read(UC_ARM64_REG_X0)
+    logging.debug("free(0x%X)", x0)
+
+    ctx.vm.free(x0)
+
+    ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
 
 def _hook_strncpy(ctx: HookContext) -> None:
@@ -397,7 +408,7 @@ def _hook_arc4random_impl(ctx: HookContext) -> None:
 STUBBED_FUNCTIONS = {
     # memory management
     "malloc": _hook_malloc,
-    "free": _hook_empty_stub,
+    "free": _hook_free,
     # string
     "strncpy": _hook_strncpy,
     # fs
@@ -415,17 +426,17 @@ STUBBED_FUNCTIONS = {
     # dynamic symbol stuff
     "dlsym": _hook_dlsym_wrapper,
     "dlopen": _hook_dlopen_wrapper,
-    "dlclose": _hook_empty_stub,
+    "dlclose": lambda ctx: _hook_empty_stub(ctx, "dlclose"),
     # pthreads
-    "pthread_once": _hook_empty_stub,
-    "pthread_create": _hook_empty_stub,
-    "pthread_mutex_lock": _hook_empty_stub,
-    "pthread_rwlock_unlock": _hook_empty_stub,
-    "pthread_rwlock_destroy": _hook_empty_stub,
-    "pthread_rwlock_wrlock": _hook_empty_stub,
-    "pthread_rwlock_init": _hook_empty_stub,
-    "pthread_mutex_unlock": _hook_empty_stub,
-    "pthread_rwlock_rdlock": _hook_empty_stub,
+    "pthread_once": lambda ctx: _hook_empty_stub(ctx, "pthread_once"),
+    "pthread_create": lambda ctx: _hook_empty_stub(ctx, "pthread_create"),
+    "pthread_mutex_lock": lambda ctx: _hook_empty_stub(ctx, "pthread_mutex_lock"),
+    "pthread_rwlock_unlock": lambda ctx: _hook_empty_stub(ctx, "pthread_rwlock_unlock"),
+    "pthread_rwlock_destroy": lambda ctx: _hook_empty_stub(ctx, "pthread_rwlock_destroy"),
+    "pthread_rwlock_wrlock": lambda ctx: _hook_empty_stub(ctx, "pthread_rwlock_wrlock"),
+    "pthread_rwlock_init": lambda ctx: _hook_empty_stub(ctx, "pthread_rwlock_init"),
+    "pthread_mutex_unlock": lambda ctx: _hook_empty_stub(ctx, "pthread_mutex_unlock"),
+    "pthread_rwlock_rdlock": lambda ctx: _hook_empty_stub(ctx, "pthread_rwlock_rdlock"),
     # date and time
     "gettimeofday": _hook_gettimeofday,
     # misc
@@ -437,7 +448,7 @@ STUBBED_FUNCTIONS = {
 
 def hook_mem_invalid(_ctx: HookContext, access: int, address: int, size: int, value: int) -> None:
     if access == UC_MEM_WRITE_UNMAPPED:
-        logging.debug(
+        logging.error(
             ">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x",
             address,
             size,
@@ -446,7 +457,7 @@ def hook_mem_invalid(_ctx: HookContext, access: int, address: int, size: int, va
         # return True to indicate we want to continue emulation
         # return False
     elif access == UC_MEM_FETCH_UNMAPPED:
-        logging.debug(
+        logging.error(
             ">>> Missing memory is being FETCH at 0x%x, data size = %u, data value = 0x%x",
             address,
             size,

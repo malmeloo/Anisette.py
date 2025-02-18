@@ -8,14 +8,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 
-def round_up(size: int, page_size: int) -> tuple[int, int]:
-    aligned_size = size
-    aligned_size += page_size - 1
-    aligned_size &= ~(page_size - 1)
-    padding_size = aligned_size - size
-    return aligned_size, padding_size
-
-
 def u_to_s32(value: int) -> int:
     b = int.to_bytes(value, 4, "little", signed=False)
     return int.from_bytes(b, "little", signed=True)

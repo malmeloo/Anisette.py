@@ -47,9 +47,7 @@ class AnisetteProvider:
     def adi(self) -> ADI:
         if self._adi is None:
             adi_fs = self._fs_collection.get("adi")
-            self._adi = ADI(adi_fs, self.library_store)
-
-        self._adi.identifier = self.device.adi_identifier
+            self._adi = ADI(adi_fs, self.library_store, self.device.adi_identifier)
 
         return self._adi
 
