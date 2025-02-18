@@ -77,7 +77,7 @@ class VirtualFileSystem:
         return handle.read(length)
 
     def write(self, fd: int, data: bytes) -> None:
-        logging.debug("FS: write %d: 0x%X", fd, data)
+        logging.debug("FS: write %d: %s", fd, data.hex())
 
         handle = self._file_handles[fd]
         handle.write(data)
