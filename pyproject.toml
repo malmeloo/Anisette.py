@@ -14,11 +14,15 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "furo>=2024.8.6",
+    "myst-parser>=3.0.1",
     "packaging>=24.2",
     "pre-commit>=4.1.0",
     "pyright>=1.1.392.post0",
     "pytest>=8.3.4",
     "ruff>=0.9.3",
+    "sphinx>=7.4.7",
+    "sphinx-autoapi>=3.6.0",
     "tomli>=2.2.1",
 ]
 
@@ -37,8 +41,6 @@ select = [
     "ALL",
 ]
 ignore = [
-    "ANN101", # annotations on `self`
-    "ANN102", # annotations on `cls`
     "FIX002", # resolving TODOs
 
     "ERA001", # commented out code
@@ -57,7 +59,16 @@ ignore = [
     "FIX",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"docs/*" = ["ALL"]
+"tests/*" = ["D", "T", "ANN", "INP", "SLF"]
+"scripts/*" = ["T201"]
+
 [tool.pytest.ini_options]
 pythonpath = [
   "."
 ]
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"

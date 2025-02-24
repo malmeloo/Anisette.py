@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+"""Find supported python versions for this package."""
+
 import json
 from collections.abc import Generator
 from itertools import count
