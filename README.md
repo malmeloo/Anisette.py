@@ -2,68 +2,39 @@
 
 An anisette data provider, but in a Python package! Based on [pyprovision-uc](https://github.com/JayFoxRox/pyprovision-uc).
 
-Still experimental, and stability of the underlying VM remains to be seen.
-
-## Prerequisites
-
-Libraries from the Apple Music Android app are required to set up the provider at least once.
-The bundle generated from this after initialization can be used for all your future provisioning needs.
-
-The required APK file can be downloaded [here](https://web.archive.org/web/20231226115856/https://apps.mzstatic.com/content/android-apple-music-apk/applemusic.apk).
-The download of this file will eventually be integrated into Anisette.py itself.
+[Documentation](https://docs.mikealmel.ooo/Anisette.py)
 
 ## Usage
 
 Anisette.py has a very simple API.
 You, the developer, are responsible for initializing, loading and saving the state of the Anisette engine, either to memory or to disk.
 If you want to keep your provisioning session, you **MUST** save and load the state properly. If you don't, you **WILL** run into errors.
+See the docs for information on how to do this.
 
 ### Initialization
+
+The Anisette provider must be initialized with libraries from the Apple Music APK.
+To save you some effort, a Cloudflare Worker has been set up to provide easy access to these libraries.
+By default, the Anisette.py will download this library bundle (~3 megabytes) when initializing a new session,
+but you can also provide an APK file or downloaded bundle yourself.
 
 ```python
 from anisette import Anisette
 
-ani = Anisette.init("applemusic.apk")
+# First use: download from Cloudflare
+ani = Anisette.init()
 
-# Alternatively, you can init from a file-like object:
-with open("applemusic.apk", "rb") as f:
-    ani = Anisette.init(f)
-```
+# After download, save library bundle to disk
+ani.save_libs("libs.bin")
 
-### Saving state
-
-State is saved to two separate bundles: a "provisioning" bundle and a "library" bundle. The provisioning bundle
-is specific to your provisioning session and can **NOT** be shared across sessions. The library bundle **CAN** be
-shared across sessions, but this is not required. It is also possible to save both the provisioning state and libraries
-to a single bundle. This may be easier to work with, but requires more disk space (3-4 megabytes per saved session).
-
-```python
-ani.save("bundle.bin")
-
-# Alternatively, to save both bundles separately:
-ani.save("provisioning.bin", "libs.bin")
-
-# You can also use file objects:
-with open("provisioning.bin", "wb+") as pf, open("libs.bin", "wb+") as lf:
-    ani.save(pf, lf)
-```
-
-### Loading state
-
-As mentioned before, if you want to keep your provisioning session across restarts, you must load it properly.
-
-```python
-ani = Anisette.load("bundle.bin")
-
-# Alternatively, to load both bundles separately:
-ani = Anisette.load("provisioning.bin", "libs.bin")
-
-# Once again, you can also use file objects:
-with open("provisioning.bin", "rb") as pf, open("libs.bin", "rb") as lf:
-    ani = Anisette.load(pf, lf)
+# For future use, initialize from disk:
+ani2 = Anisette.init("libs.bin")
 ```
 
 ### Getting Anisette data
+
+The first time you call this method will probably take a few seconds since the virtual device needs to be provisioned first.
+After provisioning, getting Anisette data should be quite fast.
 
 ```python
 ani.get_data()
