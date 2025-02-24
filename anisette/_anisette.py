@@ -24,7 +24,9 @@ class AnisetteProvider:
 
     @classmethod
     def load(cls, *files: BinaryIO, default_device_config: AnisetteDeviceConfig | None = None) -> Self:
-        return cls(FSCollection.load(*files), default_device_config)
+        provider = cls(FSCollection.load(*files), default_device_config)
+        assert provider.library_store is not None  # verify that library store exists
+        return provider
 
     def save(self, file: BinaryIO, include: list[str] | None = None, exclude: list[str] | None = None) -> None:
         return self._fs_collection.save(file, include, exclude)
@@ -32,7 +34,10 @@ class AnisetteProvider:
     @property
     def library_store(self) -> LibraryStore:
         if self._lib_store is None:
-            lib_fs = self._fs_collection.get("libs")
+            lib_fs = self._fs_collection.get("libs", False)
+            if lib_fs is None:
+                msg = "Library filesystem missing"
+                raise RuntimeError(msg)
             self._lib_store = LibraryStore.from_virtfs(lib_fs)
         return self._lib_store
 

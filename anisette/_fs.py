@@ -7,7 +7,7 @@ import os
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, BinaryIO, Union
+from typing import IO, TYPE_CHECKING, BinaryIO, Literal, Union, overload
 
 from fs import open_fs
 from fs.copy import copy_dir, copy_file, copy_fs
@@ -185,10 +185,22 @@ class FSCollection:
 
             tar_fs.writetext("fs.json", json.dumps(fs_index))
 
-    def get(self, fs_name: str) -> VirtualFileSystem:
+    @overload
+    def get(self, fs_name: str) -> VirtualFileSystem: ...
+
+    @overload
+    def get(self, fs_name: str, create_if_missing: Literal[True]) -> VirtualFileSystem: ...
+
+    @overload
+    def get(self, fs_name: str, create_if_missing: Literal[False]) -> VirtualFileSystem | None: ...
+
+    def get(self, fs_name: str, create_if_missing: bool = True) -> VirtualFileSystem | None:
         if fs_name in self._filesystems:
             logging.debug("Get FS from collection: %s", fs_name)
             return self._filesystems[fs_name]
+
+        if not create_if_missing:
+            return None
 
         logging.debug("Create new VFS: %s", fs_name)
         fs = VirtualFileSystem()
