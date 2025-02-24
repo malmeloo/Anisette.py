@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
+import httpx
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+URL_REGEX = re.compile(r"^https?://[^\s/$.?#].\S*$")
 
 
 def u_to_s32(value: int) -> int:
@@ -31,12 +38,17 @@ def s_to_u64(value: int) -> int:
 @contextmanager
 def open_file(fp: BinaryIO | str | Path, mode: Literal["rb", "wb+"] = "rb") -> Iterator[BinaryIO]:
     if isinstance(fp, str):
-        fp = Path(fp)
+        if URL_REGEX.match(fp):
+            r = httpx.get(fp, params={"arch": "arm64-v8a"})
+            r.raise_for_status()
+            fp = BytesIO(r.content)
+        else:
+            fp = Path(fp)
 
     if isinstance(fp, Path):
         file = fp.open(mode)
         do_close = True
-    elif isinstance(fp, BinaryIO):
+    elif isinstance(fp, (BinaryIO, BytesIO)):
         file = fp
         file.seek(0)
         do_close = False

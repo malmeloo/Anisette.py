@@ -21,6 +21,9 @@ if TYPE_CHECKING:
     from ._device import AnisetteDeviceConfig
 
 
+DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs"
+
+
 class Anisette:
     """
     The main Anisette provider class.
@@ -45,18 +48,24 @@ class Anisette:
     @classmethod
     def init(
         cls,
-        apk_file: BinaryIO | str | Path,
+        file: BinaryIO | str | Path | None = None,
         default_device_config: AnisetteDeviceConfig | None = None,
     ) -> Self:
         """
-        Initialize a new Anisette session.
+        Initialize a new Anisette session from an Apple Music APK or Anisette.py library file.
 
-        :param apk_file:
-        :param default_device_config:
-        :return:
+        The file type will be detected automatically. If :param:`file` is not provided, a library
+        bundle will be downloaded automatically. This file is usually a few megabytes large.
+
+        :param file: A file, path or URL to a library file or Apple Music APK.
+        :type file: BinaryIO, str, Path, None
+        :return: An instance of :class:`Anisette`.
+        :rtype: :class:`Anisette`
         """
-        with open_file(apk_file, "rb") as apk:
-            library_store = LibraryStore.from_apk(apk)
+        file = file or DEFAULT_LIBS_URL
+
+        with open_file(file, "rb") as f:
+            library_store = LibraryStore.from_file(f)
 
         fs_collection = FSCollection(libs=library_store)
         ani_provider = AnisetteProvider(fs_collection, default_device_config)
@@ -68,9 +77,10 @@ class Anisette:
         """
         Load a previously-initialized Anisette session.
 
-        :param files: File objects or paths that together form the provider's virtual file system. These can be obtained
-        using the :meth:`Anisette.save_provisioning`, :meth:`Anisette.save_libs`
+        Required files can be obtained using the :meth:`Anisette.save_provisioning`, :meth:`Anisette.save_libs`
         and/or :meth:`Anisette.save_all` methods.
+
+        :param files: File objects or paths that together form the provider's virtual file system.
         :type files: BinaryIO, str, Path
         :return: An instance of :class:`Anisette`.
         :rtype: :class:`Anisette`
@@ -107,6 +117,7 @@ class Anisette:
         The size of this file is usually in the order of megabytes.
 
         Library data is session-agnostic and may be used in as many sessions as you wish.
+        It can also be used to initialize a new session, without requiring the full Apple Music APK.
 
         The advantage of using this method over :meth:`Anisette.save_all` is that it results in less overall disk usage
         when saving many sessions, since library data can be saved separately and may be re-used across sessions.

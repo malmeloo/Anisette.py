@@ -4,6 +4,8 @@ import logging
 from typing import IO, TYPE_CHECKING, BinaryIO
 
 from elftools.elf.sections import SymbolTableSection
+from fs.errors import CreateFailed, ResourceNotFound
+from fs.tarfs import TarFS
 from fs.zipfs import ZipFS
 from typing_extensions import Self
 
@@ -96,12 +98,42 @@ class LibraryStore(VirtualFileSystem):
         return cls(fs.fs)
 
     @classmethod
-    def from_apk(cls, file: BinaryIO) -> Self:
+    def from_fs(cls, fs: FS) -> Self:
         lib_store = cls(None)
 
-        with ZipFS(file) as apk:
-            for lib in cls._LIBRARIES:
-                with apk.open(f"lib/{cls._ARCH.value}/{lib}", "rb") as f:
-                    lib_store.add_library(lib, f)
+        for lib in cls._LIBRARIES:
+            possible_paths = (
+                lib,
+                f"libs/{lib}",
+                f"lib/{cls._ARCH.value}/{lib}",
+            )
+
+            for path in possible_paths:
+                try:
+                    with fs.open(path, "rb") as f:
+                        lib_store.add_library(lib, f)
+                    break
+                except ResourceNotFound:
+                    pass
+            else:
+                msg = "FS is missing library file: %s"
+                raise RuntimeError(msg, lib)
 
         return lib_store
+
+    @classmethod
+    def from_file(cls, file: BinaryIO) -> Self:
+        try:
+            with TarFS(file) as f:
+                return cls.from_fs(f)
+        except CreateFailed:
+            pass
+
+        try:
+            with ZipFS(file) as f:
+                return cls.from_fs(f)
+        except CreateFailed:
+            pass
+
+        msg = "Unknown file format"
+        raise TypeError(msg)
