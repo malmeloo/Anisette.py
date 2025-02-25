@@ -1,6 +1,6 @@
 [project]
 name = "Anisette"
-version = "0.1.0"
+version = "1.0.0"
 description = "Anisette provider"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -12,6 +12,10 @@ dependencies = [
     "typing-extensions>=4.12.2",
     "unicorn>=2.1.1",
 ]
+
+[project.scripts]
+ani = "anisette.cli:app"
+anisette = "anisette.cli:app"
 
 [dependency-groups]
 dev = [
@@ -70,9 +74,8 @@ pythonpath = [
   "."
 ]
 
-[project.scripts]
-ani = "anisette.cli:app"
-anisette = "anisette.cli:app"
+[tool.setuptools]
+license-files = []
 
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
