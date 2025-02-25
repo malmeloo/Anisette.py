@@ -7,7 +7,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import TYPE_CHECKING, Annotated
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from typing import TYPE_CHECKING, Annotated, Callable, override
 
 import typer
 from rich.console import Console
@@ -118,8 +119,27 @@ class _SessionManager:
         return [path.stem for path in self.config_dir.glob("*.prov")]
 
 
+class _HttpRequestHandler(SimpleHTTPRequestHandler):
+    def __init__(self, ani: Anisette, callback: Callable, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+        self._ani = ani
+        self._callback = callback
+
+        super().__init__(*args, **kwargs)
+
+    @override
+    def do_GET(self) -> None:
+        data = self._ani.get_data()
+
+        self.send_response(200)
+        self.send_header("Content-type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps(data).encode())
+
+        self._callback()
+
+
 @app.command()
-def new(name: Annotated[str, typer.Argument()] = "default") -> None:
+def new(name: Annotated[str, typer.Argument(help="The name of the new session")] = "default") -> None:
     """Create a new Anisette session."""
     sessions = _SessionManager()
     if not sessions.can_save:
@@ -135,7 +155,7 @@ def new(name: Annotated[str, typer.Argument()] = "default") -> None:
 
 
 @app.command()
-def remove(name: Annotated[str, typer.Argument()] = "default") -> None:
+def remove(name: Annotated[str, typer.Argument(help="The name of the saved session to remove")] = "default") -> None:
     """Remove a saved Anisette session."""
     sessions = _SessionManager()
     if not sessions.can_save:
@@ -151,7 +171,7 @@ def remove(name: Annotated[str, typer.Argument()] = "default") -> None:
 
 
 @app.command()
-def get(name: Annotated[str, typer.Argument()] = "default") -> None:
+def get(name: Annotated[str, typer.Argument(help="The name of the saved session")] = "default") -> None:
     """Get Anisette data for a saved session."""
     sessions = _SessionManager()
     if not sessions.can_save:
@@ -182,6 +202,45 @@ def list_() -> None:
         digest = sessions.get_hash(name)
         table.add_row(name, digest)
     console.print(table)
+
+
+@app.command()
+def serve(
+    name: Annotated[str, typer.Argument(help="The name of the saved session")] = "default",
+    host: Annotated[str, typer.Option(help="Host to run the server on")] = "localhost",
+    port: Annotated[int, typer.Option(help="Port to run the server on")] = 6969,
+) -> None:
+    """Serve Anisette data for a saved session."""
+    sessions = _SessionManager()
+    if not sessions.can_save:
+        print("Unable to figure out a config directory to retrieve sessions from")
+        raise typer.Exit(code=1)
+
+    try:
+        ani = sessions.get(name)
+    except _AniError as e:
+        print(str(e))
+        raise typer.Abort from None
+
+    server = ThreadingHTTPServer(
+        (host, port),
+        lambda *args, **kwargs: _HttpRequestHandler(
+            ani,
+            (lambda: sessions.save(ani, name)),
+            *args,
+            **kwargs,
+        ),
+    )
+
+    print(f"Starting server on {host}:{port}")
+    print("Press CTRL+C to exit")
+    print()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print()
+        print("Stopping server")
 
 
 if __name__ == "__main__":
