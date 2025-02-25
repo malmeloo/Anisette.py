@@ -8,6 +8,7 @@ dependencies = [
     "fs>=2.4.16",
     "httpx>=0.28.1",
     "pyelftools>=0.31",
+    "typer>=0.15.1",
     "typing-extensions>=4.12.2",
     "unicorn>=2.1.1",
 ]
@@ -68,6 +69,10 @@ ignore = [
 pythonpath = [
   "."
 ]
+
+[project.scripts]
+ani = "anisette.cli:app"
+anisette = "anisette.cli:app"
 
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
