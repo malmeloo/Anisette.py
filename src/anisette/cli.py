@@ -10,9 +10,13 @@ import logging
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, Annotated, Callable, override
 
-import typer
-from rich.console import Console
-from rich.table import Table
+try:
+    import typer
+    from rich.console import Console
+    from rich.table import Table
+except ImportError:
+    msg = "Failed to find CLI dependencies. Install the 'anisette[cli]' package if you require CLI support."
+    raise ImportError(msg) from None
 
 from ._util import get_config_dir
 from .anisette import Anisette
