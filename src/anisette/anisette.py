@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from ._device import AnisetteDeviceConfig
 
 
-DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs"
+DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs?arch=arm64-v8a"
 
 
 class Anisette:

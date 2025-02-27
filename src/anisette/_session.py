@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
 
-import httpx
+import urllib3
 
 if TYPE_CHECKING:
     from ._adi import ADI
@@ -34,7 +34,7 @@ class ProvisioningSession:
         self._fs = fs
         self._adi = adi
 
-        self._http = httpx.Client(verify=get_ssl_context())
+        self._http = urllib3.PoolManager(ssl_context=get_ssl_context())
 
         self.__urlBag = {}
 
@@ -68,35 +68,33 @@ class ProvisioningSession:
     def _open_cache(self, key: str, mode: str) -> IO:
         return self._fs.easy_open(key, mode)
 
-    def _get(self, url: str, extra_headers: dict[str, str], cache_key: str | None = None) -> bytes:
+    def _request(
+        self,
+        method: str,
+        url: str,
+        extra_headers: dict[str, str],
+        data: str | None = None,
+        cache_key: str | None = None,
+    ) -> bytes:
         if ENABLE_CACHE and cache_key is not None:
             with self._open_cache(cache_key, "rb") as f:
                 return f.read()
 
         headers = self.__headers | extra_headers
-        response = self._http.get(url, headers=headers, timeout=5)
+        response = self._http.request(method, url, body=data, headers=headers, timeout=5.0)
+        resp_data = response.data
         if cache_key is not None:
             with self._open_cache(f"{cache_key}-head", "w") as f:
                 json.dump(headers, f, indent=2)
             with self._open_cache(cache_key, "wb") as f:
-                f.write(response.content)
-        return response.content
+                f.write(resp_data)
+        return resp_data
+
+    def _get(self, url: str, extra_headers: dict[str, str], cache_key: str | None = None) -> bytes:
+        return self._request("GET", url, extra_headers, cache_key=cache_key)
 
     def _post(self, url: str, data: str, extra_headers: dict[str, str], cache_key: str | None = None) -> bytes:
-        if ENABLE_CACHE and cache_key is not None:
-            with self._open_cache(cache_key, "rb") as f:
-                return f.read()
-
-        headers = self.__headers | extra_headers
-        response = self._http.post(url, content=data, headers=headers, timeout=5)
-        if cache_key is not None:
-            with self._open_cache(f"{cache_key}-head", "w") as f:
-                json.dump(headers, f, indent=2)
-            with self._open_cache(cache_key, "w") as f:
-                f.write(data)
-            with self._open_cache(cache_key, "wb") as f:
-                f.write(response.content)
-        return response.content
+        return self._request("POST", url, extra_headers, data=data, cache_key=cache_key)
 
     def load_url_bag(self) -> None:
         content = self._get(

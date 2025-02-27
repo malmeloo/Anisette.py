@@ -9,7 +9,8 @@ from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
-import httpx
+import certifi
+import urllib3
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -42,9 +43,9 @@ def s_to_u64(value: int) -> int:
 def open_file(fp: BinaryIO | str | Path, mode: Literal["rb", "wb+"] = "rb") -> Iterator[BinaryIO]:
     if isinstance(fp, str):
         if URL_REGEX.match(fp):
-            r = httpx.get(fp, params={"arch": "arm64-v8a"})
-            r.raise_for_status()
-            fp = BytesIO(r.content)
+            with urllib3.PoolManager(ca_certs=certifi.where()) as http:
+                r = http.request("GET", fp)
+            fp = BytesIO(r.data)
         else:
             fp = Path(fp)
 
