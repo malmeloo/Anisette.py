@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import logging
-from typing import BinaryIO
+from typing import BinaryIO, Callable
 
 from typing_extensions import Self
 
 from ._adi import ADI
 from ._device import AnisetteDeviceConfig, Device
-from ._fs import FSCollection
+from ._fs import FSCollection, VirtualFileSystem
 from ._library import LibraryStore
 from ._session import ProvisioningSession
 
 
 class AnisetteProvider:
-    def __init__(self, fs_collection: FSCollection, default_device_config: AnisetteDeviceConfig | None) -> None:
+    def __init__(
+        self,
+        fs_collection: FSCollection,
+        fs_fallback: Callable[[], VirtualFileSystem],
+        default_device_config: AnisetteDeviceConfig | None,
+    ) -> None:
         self._fs_collection = fs_collection
+        self._fs_fallback = fs_fallback
         self._default_device_config = default_device_config or AnisetteDeviceConfig.default()
 
         self._lib_store: LibraryStore | None = None
@@ -23,8 +29,13 @@ class AnisetteProvider:
         self._provisioning_session: ProvisioningSession | None = None
 
     @classmethod
-    def load(cls, *files: BinaryIO, default_device_config: AnisetteDeviceConfig | None = None) -> Self:
-        provider = cls(FSCollection.load(*files), default_device_config)
+    def load(
+        cls,
+        *files: BinaryIO,
+        fs_fallback: Callable[[], VirtualFileSystem],
+        default_device_config: AnisetteDeviceConfig | None = None,
+    ) -> Self:
+        provider = cls(FSCollection.load(*files), fs_fallback, default_device_config)
         assert provider.library_store is not None  # verify that library store exists
         return provider
 
@@ -34,10 +45,10 @@ class AnisetteProvider:
     @property
     def library_store(self) -> LibraryStore:
         if self._lib_store is None:
-            lib_fs = self._fs_collection.get("libs", False)
+            lib_fs = self._fs_collection.get("libs", create_if_missing=False)
             if lib_fs is None:
-                msg = "Library filesystem missing"
-                raise RuntimeError(msg)
+                lib_fs = self._fs_fallback()
+                self._fs_collection.add("libs", lib_fs)
             self._lib_store = LibraryStore.from_virtfs(lib_fs)
         return self._lib_store
 
