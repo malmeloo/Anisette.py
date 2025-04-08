@@ -168,6 +168,9 @@ class FSCollection:
                     filesystems[name] = VirtualFileSystem(fs)
         return cls(**filesystems)
 
+    def add(self, name: str, fs: VirtualFileSystem) -> None:
+        self._filesystems[name] = fs
+
     def save(self, file: BinaryIO, include: list[str] | None = None, exclude: list[str] | None = None) -> None:
         to_save = set(self._filesystems.keys()) if include is None else set(include)
         if exclude is not None:

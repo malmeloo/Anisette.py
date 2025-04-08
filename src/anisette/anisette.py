@@ -43,6 +43,13 @@ AnisetteHeaders = TypedDict(
 )
 
 
+def _get_libs(file: BinaryIO | str | Path | None = None) -> LibraryStore:
+    file = file or DEFAULT_LIBS_URL
+
+    with open_file(file, "rb") as f:
+        return LibraryStore.from_file(f)
+
+
 class Anisette:
     """
     The main Anisette provider class.
@@ -64,6 +71,11 @@ class Anisette:
 
         self._ds_id = c_ulonglong(-2).value
 
+    @property
+    def is_provisioned(self) -> bool:
+        """Whether this Anisette session has been provisioned yet or not."""
+        return self._ani_provider.adi.is_machine_provisioned(self._ds_id)
+
     @classmethod
     def init(
         cls,
@@ -81,14 +93,11 @@ class Anisette:
         :return: An instance of :class:`Anisette`.
         :rtype: :class:`Anisette`
         """
-        file = file or DEFAULT_LIBS_URL
-
-        with open_file(file, "rb") as f:
-            library_store = LibraryStore.from_file(f)
-
-        fs_collection = FSCollection(libs=library_store)
-        ani_provider = AnisetteProvider(fs_collection, default_device_config)
-
+        ani_provider = AnisetteProvider(
+            FSCollection(),
+            lambda: _get_libs(file),
+            default_device_config,
+        )
         return cls(ani_provider)
 
     @classmethod
@@ -106,7 +115,11 @@ class Anisette:
         """
         with ExitStack() as stack:
             file_objs = [stack.enter_context(open_file(f, "rb")) for f in files]
-            ani_provider = AnisetteProvider.load(*file_objs, default_device_config=default_device_config)
+            ani_provider = AnisetteProvider.load(
+                *file_objs,
+                fs_fallback=lambda: _get_libs(),
+                default_device_config=default_device_config,
+            )
 
         return cls(ani_provider)
 
@@ -126,6 +139,8 @@ class Anisette:
         :param file: The file or path to save provisioning data to.
         :type file: BinaryIO, str, Path
         """
+        self.provision()
+
         with open_file(file, "wb+") as f:
             self._ani_provider.save(f, exclude=["libs"])
 
@@ -144,6 +159,9 @@ class Anisette:
         :param file: The file or path to save library data to.
         :type file: BinaryIO, str, Path
         """
+        # force fetch of library store to make sure it exists when saving
+        _ = self._ani_provider.library_store
+
         with open_file(file, "wb+") as f:
             self._ani_provider.save(f, include=["libs"])
 
@@ -173,7 +191,7 @@ class Anisette:
         In most cases it is not necessary to manually use this method, since :meth:`Anisette.get_data`
         will call it implicitly.
         """
-        if not self._ani_provider.adi.is_machine_provisioned(self._ds_id):
+        if not self.is_provisioned:
             logging.info("Provisioning...")
             self._ani_provider.provisioning_session.provision(self._ds_id)
 
