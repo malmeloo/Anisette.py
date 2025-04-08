@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import base64
+import locale
 import logging
 from contextlib import ExitStack
 from ctypes import c_ulonglong
-from typing import TYPE_CHECKING, Any, BinaryIO
+from datetime import datetime
+from typing import TYPE_CHECKING, BinaryIO, TypedDict
 
 from typing_extensions import Self
 
@@ -22,6 +24,23 @@ if TYPE_CHECKING:
 
 
 DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs?arch=arm64-v8a"
+
+
+AnisetteHeaders = TypedDict(
+    "AnisetteHeaders",
+    {
+        "X-Apple-I-Client-Time": str,
+        "X-Apple-I-MD": str,
+        "X-Apple-I-MD-LU": str,
+        "X-Apple-I-MD-M": str,
+        "X-Apple-I-MD-RINFO": str,
+        "X-Apple-I-SRL-NO": str,
+        "X-Apple-I-TimeZone": str,
+        "X-Apple-Locale": str,
+        "X-MMe-Client-Info": str,
+        "X-Mme-Device-Id": str,
+    },
+)
 
 
 class Anisette:
@@ -158,7 +177,7 @@ class Anisette:
             logging.info("Provisioning...")
             self._ani_provider.provisioning_session.provision(self._ds_id)
 
-    def get_data(self) -> dict[str, Any]:  # FIXME: make TypedDict
+    def get_data(self) -> AnisetteHeaders:
         """
         Obtain Anisette headers for this session.
 
@@ -166,9 +185,17 @@ class Anisette:
         """
         self.provision()
         otp = self._ani_provider.adi.request_otp(self._ds_id)
+        device = self._ani_provider.device
 
-        # FIXME: return other fields as well
         return {
+            "X-Apple-I-Client-Time": datetime.now().astimezone().replace(microsecond=0).isoformat() + "Z",
             "X-Apple-I-MD": base64.b64encode(bytes(otp.otp)).decode(),
+            "X-Apple-I-MD-LU": base64.b64encode(str(device.local_user_uuid).encode()).decode(),
             "X-Apple-I-MD-M": base64.b64encode(bytes(otp.machine_id)).decode(),
+            "X-Apple-I-MD-RINFO": "17106176",
+            "X-Apple-I-SRL-NO": "0",
+            "X-Apple-I-TimeZone": str(datetime.now().astimezone().tzinfo),
+            "X-Apple-Locale": locale.getdefaultlocale()[0] or "en_US",
+            "X-MMe-Client-Info": device.server_friendly_description,
+            "X-Mme-Device-Id": device.unique_device_identifier,
         }
