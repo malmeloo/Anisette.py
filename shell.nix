@@ -6,7 +6,7 @@ in
 pkgs.mkShell {
   packages = with pkgs; [
     (unstable.python312.withPackages (ps: [ps.uv]))
-    nodejs_23
+    nodejs_24
     wrangler
   ];
 
