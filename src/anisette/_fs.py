@@ -19,7 +19,7 @@ from typing_extensions import Self
 if TYPE_CHECKING:
     from fs.base import FS
 
-logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 Directory = dict[str, Union["Directory", bytearray]]
 
@@ -71,19 +71,19 @@ class VirtualFileSystem:
             raise FileNotFoundError from None
 
     def read(self, fd: int, length: int) -> bytes:
-        logging.debug("FS: read %d: %d", fd, length)
+        logger.debug("FS: read %d: %d", fd, length)
 
         handle = self._file_handles[fd]
         return handle.read(length)
 
     def write(self, fd: int, data: bytes) -> None:
-        logging.debug("FS: write %d: %s", fd, data.hex())
+        logger.debug("FS: write %d: %s", fd, data.hex())
 
         handle = self._file_handles[fd]
         handle.write(data)
 
     def truncate(self, fd: int, length: int) -> None:
-        logging.debug("FS: truncate %d: %d", fd, length)
+        logger.debug("FS: truncate %d: %d", fd, length)
 
         handle = self._file_handles[fd]
         handle.truncate(length)
@@ -93,7 +93,7 @@ class VirtualFileSystem:
         if o_flag & O_CREAT:
             mode += "+"
 
-        logging.debug("FS: open %s: %s", mode, path)
+        logger.debug("FS: open %s: %s", mode, path)
 
         fd = len(self._file_handles)
         handle = self._fs.open(path, mode)
@@ -101,19 +101,19 @@ class VirtualFileSystem:
         return fd
 
     def close(self, fd: int) -> None:
-        logging.debug("FS: close %d", fd)
+        logger.debug("FS: close %d", fd)
 
         handle = self._file_handles.pop(fd)
         handle.close()
 
     def mkdir(self, path: str) -> None:
-        logging.debug("FS: mkdir %s", path)
+        logger.debug("FS: mkdir %s", path)
 
         with contextlib.suppress(DirectoryExists):
             self._fs.makedir(path)
 
     def stat(self, path_or_fd: str | int) -> StatResult:
-        logging.debug("FS: stat %s", path_or_fd)
+        logger.debug("FS: stat %s", path_or_fd)
 
         if isinstance(path_or_fd, int):  # file descriptor
             handle = self._file_handles[path_or_fd]
@@ -161,7 +161,7 @@ class FSCollection:
                 for name, path in fs_index.items():  # for each registered filesystem in the file
                     if name in filesystems:
                         msg = "Filesystem %s appears in multiple bundles"
-                        logging.warning(msg, name)
+                        logger.warning(msg, name)
 
                     fs = MemoryFS()
                     copy_dir(tar_fs, path, fs, ".")
@@ -179,7 +179,7 @@ class FSCollection:
         with TarFS(file, write=True, compression="bz2") as tar_fs:
             fs_index: dict[str, str] = {}
             for name in to_save:
-                logging.debug("Saving %s to FS bundle", name)
+                logger.debug("Saving %s to FS bundle", name)
 
                 fs = self._filesystems[name]
                 path = f"./{name}"
@@ -199,13 +199,13 @@ class FSCollection:
 
     def get(self, fs_name: str, create_if_missing: bool = True) -> VirtualFileSystem | None:
         if fs_name in self._filesystems:
-            logging.debug("Get FS from collection: %s", fs_name)
+            logger.debug("Get FS from collection: %s", fs_name)
             return self._filesystems[fs_name]
 
         if not create_if_missing:
             return None
 
-        logging.debug("Create new VFS: %s", fs_name)
+        logger.debug("Create new VFS: %s", fs_name)
         fs = VirtualFileSystem()
         self._filesystems[fs_name] = fs
         return fs

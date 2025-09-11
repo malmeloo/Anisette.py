@@ -11,6 +11,8 @@ from ._fs import FSCollection, VirtualFileSystem
 from ._library import LibraryStore
 from ._session import ProvisioningSession
 
+logger = logging.getLogger(__name__)
+
 
 class AnisetteProvider:
     def __init__(
@@ -63,7 +65,7 @@ class AnisetteProvider:
     @property
     def adi(self) -> ADI:
         if self._adi and any(usage >= 0.5 for usage in self._adi.alloc_stats):
-            logging.warning("Detected memory leak, restarting VM. Next data fetch may take slightly longer.")
+            logger.warning("Detected memory leak, restarting VM. Next data fetch may take slightly longer.")
             self._adi = None
 
         if self._adi is None:

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from ._fs import VirtualFileSystem
     from ._vm import VM
 
-logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 IMPORT_ADDRESS = 0xA0000000
 IMPORT_SIZE = 0x1000
@@ -38,20 +38,20 @@ class HookContext:
 
 def _hook_empty_stub(ctx: HookContext, orig_name: str | None = None) -> None:
     if orig_name is not None:
-        logging.debug("%s(???) - (empty stubbed)", orig_name)
+        logger.debug("%s(???) - (empty stubbed)", orig_name)
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
 
 def _hook_malloc(ctx: HookContext) -> None:
     x0 = ctx.vm.reg_read(UC_ARM64_REG_X0)
-    logging.debug("malloc(0x%X)", x0)
+    logger.debug("malloc(0x%X)", x0)
     x0 = ctx.vm.malloc(x0)
     ctx.vm.reg_write(UC_ARM64_REG_X0, x0)
 
 
 def _hook_free(ctx: HookContext) -> None:
     x0 = ctx.vm.reg_read(UC_ARM64_REG_X0)
-    logging.debug("free(0x%X)", x0)
+    logger.debug("free(0x%X)", x0)
 
     ctx.vm.free(x0)
 
@@ -87,7 +87,7 @@ def _hook_mkdir(ctx: HookContext) -> None:
     path = ctx.vm.read_cstr(x0).decode("utf-8")
     mode = x1
 
-    logging.debug("mkdir('%s', %s)", path, oct(mode))
+    logger.debug("mkdir('%s', %s)", path, oct(mode))
 
     assert path in [
         "./anisette",
@@ -115,7 +115,7 @@ def _hook_chmod(ctx: HookContext) -> None:
     path = ctx.vm.read_cstr(x0).decode("utf-8")
     mode = x1
 
-    logging.debug("chmod('%s', %s)", path, oct(mode))
+    logger.debug("chmod('%s', %s)", path, oct(mode))
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
@@ -125,7 +125,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
         stat_result = ctx.fs.stat(path_or_fd)
         # print(statResult)
     except FileNotFoundError:
-        logging.debug("Unable to stat '%s'", path_or_fd)
+        logger.debug("Unable to stat '%s'", path_or_fd)
         ctx.vm.reg_write(UC_ARM64_REG_X0, s_to_u64(-1))
         ctx.vm.set_errno(2)  # ENOENT
         return
@@ -144,10 +144,10 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
     stat_bytes = bytes(stat)
     # print(statBytes.hex(), len(statBytes))
 
-    # logging.debug("%s %s %s", stat_result.st_size, stat_result.st_blksize, stat_result.st_blocks)
-    logging.debug("%s %s %s", stat.st_size, stat.st_blksize, stat.st_blocks)
+    # logger.debug("%s %s %s", stat_result.st_size, stat_result.st_blksize, stat_result.st_blocks)
+    logger.debug("%s %s %s", stat.st_size, stat.st_blksize, stat.st_blocks)
 
-    logging.debug("0x%X = %d", stat_result.st_mode, stat_result.st_mode)
+    logger.debug("0x%X = %d", stat_result.st_mode, stat_result.st_mode)
     stat_bytes = b"".join(
         [
             bytes.fromhex(
@@ -191,7 +191,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
             ),
         ],
     )
-    logging.debug(len(stat_bytes))
+    logger.debug(len(stat_bytes))
     assert len(stat_bytes) in [104, 128]
 
     ctx.vm.mem_write(buf, stat_bytes)
@@ -208,7 +208,7 @@ def _hook_lstat(ctx: HookContext) -> None:
     path = ctx.vm.read_cstr(p_path).decode("utf-8")
     buf = x1
 
-    logging.debug("lstat(0x%X:'%s', [...])", p_path, path)
+    logger.debug("lstat(0x%X:'%s', [...])", p_path, path)
 
     return _handle_stat(ctx, path, buf)
 
@@ -232,7 +232,7 @@ def _hook_open(ctx: HookContext) -> None:
     oflag = x1
     mode = x2
 
-    logging.debug("open('%s', %s, %s)", path, oct(oflag), oct(mode))
+    logger.debug("open('%s', %s, %s)", path, oct(oflag), oct(mode))
     # time.sleep(2.0)
     # assert(False)
 
@@ -248,7 +248,7 @@ def _hook_ftruncate(ctx: HookContext) -> None:
     fildes = x0
     length = x1
 
-    logging.debug("ftruncate(%d, %d)", fildes, length)
+    logger.debug("ftruncate(%d, %d)", fildes, length)
 
     ctx.fs.truncate(fildes, length)
 
@@ -264,7 +264,7 @@ def _hook_read(ctx: HookContext) -> None:
     buf = x1
     nbyte = x2
 
-    logging.debug("read(%d, 0x%X, %d)", fildes, buf, nbyte)
+    logger.debug("read(%d, 0x%X, %d)", fildes, buf, nbyte)
 
     buf_bytes = ctx.fs.read(fildes, nbyte)
     ctx.vm.mem_write(buf, buf_bytes)
@@ -281,7 +281,7 @@ def _hook_write(ctx: HookContext) -> None:
     buf = x1
     nbyte = x2
 
-    logging.debug("write(%d, 0x%X, %d)", fildes, buf, nbyte)
+    logger.debug("write(%d, 0x%X, %d)", fildes, buf, nbyte)
 
     buf_bytes = ctx.vm.mem_read(buf, nbyte)
     ctx.fs.write(fildes, buf_bytes)
@@ -304,7 +304,7 @@ def _hook_dlopen_wrapper(ctx: HookContext) -> None:
     path = ctx.vm.read_cstr(x0).decode("utf-8")
     library_name = path.rpartition("/")[2]
 
-    logging.debug("dlopen('%s' (%s))", path, library_name)
+    logger.debug("dlopen('%s' (%s))", path, library_name)
 
     assert library_name in [
         "libCoreADI.so",
@@ -326,10 +326,10 @@ def _hook_dlsym_wrapper(ctx: HookContext) -> None:
     library_index = handle - 1
     library = ctx.vm.get_library(library_index)
 
-    logging.debug("dlsym(%X (%s), '%s')", handle, library.name, symbol)
+    logger.debug("dlsym(%X (%s), '%s')", handle, library.name, symbol)
 
     symbol_address = library.resolve_symbol_by_name(symbol)
-    logging.debug("Found at 0x%X", symbol_address)
+    logger.debug("Found at 0x%X", symbol_address)
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, symbol_address)
 
@@ -343,9 +343,9 @@ def _hook_gettimeofday(ctx: HookContext) -> None:
 
     if cache_time:
         t_bytes = open(cache_path, "rb").read()  # noqa: PTH123, SIM115
-        logging.debug("Loaded time from cache!")
+        logger.debug("Loaded time from cache!")
         t = c_timeval.from_buffer_copy(t_bytes)
-        logging.debug("ok: %s", t)
+        logger.debug("ok: %s", t)
 
     t = c_timeval(
         tv_sec=math.floor(timestamp // 1),
@@ -362,7 +362,7 @@ def _hook_gettimeofday(ctx: HookContext) -> None:
     tp = x0
     tzp = x1
 
-    logging.debug("gettimeofday(0x%X, 0x%X)", tp, tzp)
+    logger.debug("gettimeofday(0x%X, 0x%X)", tp, tzp)
 
     # We don't need timezone support
     assert tzp == 0
@@ -374,7 +374,7 @@ def _hook_gettimeofday(ctx: HookContext) -> None:
     """
 
     # Write the time
-    logging.debug("%s %s %s", t.__dict__, t_bytes.hex(), len(t_bytes))
+    logger.debug("%s %s %s", t.__dict__, t_bytes.hex(), len(t_bytes))
     ctx.vm.mem_write(tp, t_bytes)
 
     # Return success
@@ -383,7 +383,7 @@ def _hook_gettimeofday(ctx: HookContext) -> None:
 
 def _hook_errno_location(ctx: HookContext) -> None:
     if ctx.vm.errno_address is None:
-        logging.debug("Checking errno before first error (!)")
+        logger.debug("Checking errno before first error (!)")
         ctx.vm.set_errno(0)
         assert ctx.vm.errno_address is not None
 
@@ -394,7 +394,7 @@ def _hook_system_property_get_impl(ctx: HookContext) -> None:
     x0 = ctx.vm.reg_read(UC_ARM64_REG_X0)
     x1 = ctx.vm.reg_read(UC_ARM64_REG_X1)
     name = ctx.vm.read_cstr(x0).decode("utf-8")
-    logging.debug("__system_property_get(%s, [...])", name)
+    logger.debug("__system_property_get(%s, [...])", name)
     value = b"no s/n number"
     ctx.vm.mem_write(x1, value)
     ctx.vm.reg_write(UC_ARM64_REG_X0, len(value))
@@ -448,7 +448,7 @@ STUBBED_FUNCTIONS = {
 
 def hook_mem_invalid(_ctx: HookContext, access: int, address: int, size: int, value: int) -> None:
     if access == UC_MEM_WRITE_UNMAPPED:
-        logging.error(
+        logger.error(
             ">>> Missing memory is being WRITE at 0x%x, data size = %u, data value = 0x%x",
             address,
             size,
@@ -457,7 +457,7 @@ def hook_mem_invalid(_ctx: HookContext, access: int, address: int, size: int, va
         # return True to indicate we want to continue emulation
         # return False
     elif access == UC_MEM_FETCH_UNMAPPED:
-        logging.error(
+        logger.error(
             ">>> Missing memory is being FETCH at 0x%x, data size = %u, data value = 0x%x",
             address,
             size,
@@ -484,7 +484,7 @@ def hook_code(ctx: HookContext, address: int, size: int) -> None:
     logs += f"; W15=0x{ctx.vm.reg_read(UC_ARM64_REG_W15):X}"
     logs += f"; FP/X29=0x{ctx.vm.reg_read(UC_ARM64_REG_FP):X}"
     # print("; *347c40=0x%08X" % int.from_bytes(uc.mem_read(0x347c40, 4), 'little'), end="")
-    logging.debug(logs)
+    logger.debug(logs)
 
 
 def hook_block(ctx: HookContext, _address: int, _size: int) -> None:

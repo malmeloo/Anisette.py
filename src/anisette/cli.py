@@ -24,6 +24,7 @@ from .anisette import Anisette
 if TYPE_CHECKING:
     from pathlib import Path
 
+logger = logging.getLogger(__name__)
 app = typer.Typer(no_args_is_help=True)
 console = Console()
 
@@ -47,7 +48,7 @@ class _SessionManager:
 
         self._conf_dir = get_config_dir("anisette-py")
         if self._conf_dir is None:
-            logging.warning("Could not find user config directory")
+            logger.warning("Could not find user config directory")
             return None
         return self._conf_dir
 

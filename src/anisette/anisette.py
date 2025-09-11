@@ -25,6 +25,8 @@ if TYPE_CHECKING:
 
 DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs?arch=arm64-v8a"
 
+logger = logging.getLogger(__name__)
+
 
 AnisetteHeaders = TypedDict(
     "AnisetteHeaders",
@@ -192,7 +194,7 @@ class Anisette:
         will call it implicitly.
         """
         if not self.is_provisioned:
-            logging.info("Provisioning...")
+            logger.info("Provisioning...")
             self._ani_provider.provisioning_session.provision(self._ds_id)
 
     def get_data(self) -> AnisetteHeaders:

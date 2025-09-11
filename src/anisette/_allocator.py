@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 class Allocator:
     _PAGE_SIZE = 0xFF
@@ -64,7 +66,7 @@ class Allocator:
 
                 return
 
-        logging.warning("Could not free 0x%x: address not allocated?", address)
+        logger.warning("Could not free 0x%x: address not allocated?", address)
 
     def alloc(self, size: int) -> tuple[int, int]:
         length = (size + self._PAGE_SIZE) & ~self._PAGE_SIZE  # Align to pagesize bytes
@@ -75,18 +77,18 @@ class Allocator:
 
         address = self._claim_block(block_i, length)
 
-        logging.debug("Allocating %d bytes (align: %d) at 0x%x", size, length, address)
-        logging.debug("Allocator base: 0x%x, size: 0x%x", self._base, self._size)
-        logging.debug("New alloc size: %x", self.alloc_size)
+        logger.debug("Allocating %d bytes (align: %d) at 0x%x", size, length, address)
+        logger.debug("Allocator base: 0x%x, size: 0x%x", self._base, self._size)
+        logger.debug("New alloc size: %x", self.alloc_size)
 
         return address, length
 
     def free(self, address: int) -> None:
         size = self._alloc_size.pop(address, None)
         if size is None:
-            logging.warning("Tried to free memory at 0x%X, but never allocated", address)
+            logger.warning("Tried to free memory at 0x%X, but never allocated", address)
             return
 
         self._create_free_block(address, size)
 
-        logging.debug("Freed %x bytes at %x, new alloc size: %x", size, address, self.alloc_size)
+        logger.debug("Freed %x bytes at %x, new alloc size: %x", size, address, self.alloc_size)

@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 ENABLE_CACHE = False
 
+logger = logging.getLogger(__name__)
+
 
 def get_ssl_context() -> ssl.SSLContext:
     pem_path = Path(__file__).parent / "apple-root.pem"
@@ -62,7 +64,7 @@ class ProvisioningSession:
 
     @adi.setter
     def adi(self, adi: ADI) -> None:
-        logging.debug("Attached new ADI to ProvisioningSession")
+        logger.debug("Attached new ADI to ProvisioningSession")
         self._adi = adi
 
     def _open_cache(self, key: str, mode: str) -> IO:
@@ -108,7 +110,7 @@ class ProvisioningSession:
             self.__urlBag[url_name] = url
 
     def provision(self, ds_id: int) -> None:
-        logging.debug("ProvisioningSession.provision")
+        logger.debug("ProvisioningSession.provision")
         # FIXME: !!!
 
         if len(self.__urlBag) == 0:
@@ -136,14 +138,14 @@ class ProvisioningSession:
         spim_plist = plistlib.loads(start_provisioning_plist)
         spim_response = spim_plist["Response"]
         spim_str = spim_response["spim"]
-        logging.debug(spim_str)
+        logger.debug(spim_str)
 
         spim = base64.b64decode(spim_str)
 
         cpim = self._adi.start_provisioning(ds_id, spim)
         # FIXME: scope (failure) try { adi.destroyProvisioning(cpim.session); } catch(Throwable) {}
 
-        logging.debug("cpim: %s", cpim.cpim)
+        logger.debug("cpim: %s", cpim.cpim)
 
         extra_headers = {
             "X-Apple-I-Client-Time": time(),

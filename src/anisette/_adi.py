@@ -11,6 +11,8 @@ if TYPE_CHECKING:
     from ._fs import VirtualFileSystem
     from ._library import LibraryStore
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ClientProvisioningIntermediateMetadata:
@@ -35,13 +37,13 @@ class ADI:
 
         ssc_library = self._vm.load_library("libstoreservicescore.so")
 
-        logging.debug("Loading Android-specific symbols...")
+        logger.debug("Loading Android-specific symbols...")
 
         self.__pADILoadLibraryWithPath = ssc_library.resolve_symbol_by_name("kq56gsgHG6")
         self.__pADISetAndroidID = ssc_library.resolve_symbol_by_name("Sph98paBcz")
         self.__pADISetProvisioningPath = ssc_library.resolve_symbol_by_name("nf92ngaK92")
 
-        logging.debug("Loading ADI symbols...")
+        logger.debug("Loading ADI symbols...")
 
         self.__pADIProvisioningErase = ssc_library.resolve_symbol_by_name("p435tmhbla")
         self.__pADISynchronize = ssc_library.resolve_symbol_by_name("tn46gtiuhw")
@@ -68,7 +70,7 @@ class ADI:
 
     def _set_identifier(self, value: str) -> None:
         self._identifier = value
-        logging.debug("Setting identifier %s", value)
+        logger.debug("Setting identifier %s", value)
         identifier = value.encode("utf-8")
         p_identifier = self._vm.temp_alloc_data(identifier)
         self._vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
@@ -106,11 +108,11 @@ class ADI:
         self._vm.temp_free(p_persistent_token_metadata)
         self._vm.temp_free(p_trust_key)
 
-        logging.debug("0x%X", session)
-        logging.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
-        logging.debug("Trust key: %s (len: %d)", trust_key.hex(), len(trust_key))
+        logger.debug("0x%X", session)
+        logger.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
+        logger.debug("Trust key: %s (len: %d)", trust_key.hex(), len(trust_key))
 
-        logging.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
+        logger.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
         assert ret == 0
 
     def start_provisioning(
@@ -118,7 +120,7 @@ class ADI:
         ds_id: int,
         server_provisioning_intermediate_metadata: bytes,
     ) -> ClientProvisioningIntermediateMetadata:
-        logging.debug("ADI.start_provisioning")
+        logger.debug("ADI.start_provisioning")
         # FIXME: !!!
 
         p_cpim = self._vm.temp_alloc(8)  # ubyte*
@@ -127,8 +129,8 @@ class ADI:
         p_server_provisioning_intermediate_metadata = self._vm.temp_alloc_data(
             server_provisioning_intermediate_metadata,
         )
-        logging.debug("0x%X", ds_id)
-        logging.debug(server_provisioning_intermediate_metadata.hex())
+        logger.debug("0x%X", ds_id)
+        logger.debug(server_provisioning_intermediate_metadata.hex())
 
         ret = self._vm.invoke_cdecl(
             self.__pADIProvisioningStart,
@@ -141,7 +143,7 @@ class ADI:
                 p_session,
             ],
         )
-        logging.debug("%s: %X=%d", "pADIProvisioningStart", ret, u_to_s32(ret))
+        logger.debug("%s: %X=%d", "pADIProvisioningStart", ret, u_to_s32(ret))
         assert ret == 0
 
         self._vm.temp_free(p_cpim)
@@ -151,17 +153,17 @@ class ADI:
 
         # Readback output
         cpim = self._vm.read_u64(p_cpim)
-        logging.debug("Wrote data to 0x%X", cpim)
+        logger.debug("Wrote data to 0x%X", cpim)
         cpim_length = self._vm.read_u32(p_cpim_length)
         cpim_bytes = self._vm.mem_read(cpim, cpim_length)
         session = self._vm.read_u32(p_session)
 
-        # logging.debug(cpim_length, cpim_bytes.hex(), session)
+        # logger.debug(cpim_length, cpim_bytes.hex(), session)
         # assert(False)
         return ClientProvisioningIntermediateMetadata(self, cpim_bytes, session)
 
     def is_machine_provisioned(self, ds_id: int) -> bool:
-        logging.debug("ADI.is_machine_provisioned")
+        logger.debug("ADI.is_machine_provisioned")
 
         error_code = u_to_s32(self._vm.invoke_cdecl(self.__pADIGetLoginCode, [ds_id]))
 
@@ -177,7 +179,7 @@ class ADI:
         raise NotImplementedError
 
     def request_otp(self, ds_id: int) -> OneTimePassword:
-        logging.debug("ADI.request_otp")
+        logger.debug("ADI.request_otp")
         # FIXME: !!!
 
         p_otp = self._vm.temp_alloc(8)
@@ -200,7 +202,7 @@ class ADI:
                 p_otp_length,
             ],
         )
-        logging.debug("%s: %X=%d", "pADIOTPRequest", ret, u_to_s32(ret))
+        logger.debug("%s: %X=%d", "pADIOTPRequest", ret, u_to_s32(ret))
         assert ret == 0
 
         self._vm.temp_free(p_otp)

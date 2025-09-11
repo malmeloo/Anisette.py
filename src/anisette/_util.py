@@ -18,6 +18,8 @@ if TYPE_CHECKING:
 
 URL_REGEX = re.compile(r"^https?://[^\s/$.?#].\S*$")
 
+logger = logging.getLogger(__name__)
+
 
 def u_to_s32(value: int) -> int:
     b = int.to_bytes(value, 4, "little", signed=False)
@@ -74,16 +76,16 @@ def get_config_dir(dir_name: str) -> Path | None:
         if path_str is None:
             home = os.getenv("HOME")
             if home is None:
-                logging.info("Could not determine home directory")
+                logger.info("Could not determine home directory")
                 return None
             subpath = os.path.join(home, ".config" if plat == "Linux" else "Library/Preferences")  # noqa: PTH118
             path_str = os.getenv("XDG_CONFIG_HOME", subpath)
     else:
-        logging.info("Platform unsupported: %s", plat)
+        logger.info("Platform unsupported: %s", plat)
         return None
 
     if path_str is None:
-        logging.info("Could not determine config directory")
+        logger.info("Could not determine config directory")
         return None
 
     path = Path(path_str) / dir_name

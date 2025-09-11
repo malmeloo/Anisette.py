@@ -19,13 +19,13 @@ from unicorn import (
     UC_MODE_32,
     UC_MODE_64,
     UC_MODE_ARM,
-    Uc,
 )
 from unicorn.arm64_const import (
     UC_ARM64_REG_LR,
     UC_ARM64_REG_SP,
     UC_ARM64_REG_X0,
 )
+from unicorn.unicorn import Uc
 
 from ._allocator import Allocator
 from ._arch import Architecture
@@ -42,7 +42,7 @@ from ._library import (
 if TYPE_CHECKING:
     from ._fs import VirtualFileSystem
 
-logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 RETURN_ADDRESS = 0xDEAD0000
 STACK_ADDRESS = 0xF0000000
@@ -85,7 +85,7 @@ class VM:
         return self._errno_address
 
     def wrap_hook(self, hook: Callable) -> Callable:
-        def _new_hook(_uc: Uc, *args: Any) -> None:  # noqa: ANN401=
+        def _new_hook(_uc: Uc, *args: Any) -> None:  # noqa: ANN401
             ctx = HookContext(vm=self, fs=self._fs)
             return hook(ctx, *(args[:-1]))
 
@@ -204,7 +204,7 @@ class VM:
         data_size = len(data)
         address, alloc_size = self._temp_allocator.alloc(data_size + 1)
 
-        logging.debug("Allocating at 0x%X; bytes 0x%X/0x%X", address, data_size, alloc_size)
+        logger.debug("Allocating at 0x%X; bytes 0x%X/0x%X", address, data_size, alloc_size)
         self.mem_write(address, data + b"\xcc" * alloc_size)
 
         return address
@@ -220,8 +220,8 @@ class VM:
         for i, value in enumerate(args):
             assert i <= 28
             self.reg_write(UC_ARM64_REG_X0 + i, value)
-            logging.debug("X%d: 0x%08X", i, value)
-        logging.debug("Calling 0x%X", address)
+            logger.debug("X%d: 0x%08X", i, value)
+        logger.debug("Calling 0x%X", address)
         self.reg_write(UC_ARM64_REG_SP, STACK_ADDRESS + STACK_SIZE)
         self.reg_write(UC_ARM64_REG_LR, lr)
         # uc.reg_write(UC_ARM64_REG_FP, stackAddress + stackSize)
@@ -319,7 +319,7 @@ class VM:
             padding_before_size = address - address_start
             padding_after_size = size - data_size
 
-            logging.debug(
+            logger.debug(
                 "Mapping at 0x%X-0x%X (0x%X-0x%X); bytes 0x%X",
                 address_start,
                 address_end,
@@ -337,7 +337,7 @@ class VM:
                 self._uc.mem_map(address_start, len(data))
                 self.mem_write(address_start, data)
             else:
-                logging.debug("- Skipping %s", segment.__dict__)
+                logger.debug("- Skipping %s", segment.__dict__)
 
         self.relocate_section(library, ".rela.dyn", library.base)
         self.relocate_section(library, ".rela.plt", library.base)
