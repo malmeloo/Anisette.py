@@ -14,10 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cli = [
-    "typer>=0.15.1",
-    "rich>=13.9.4",
-]
+cli = ["typer>=0.15.1", "rich>=13.9.4"]
 
 [project.scripts]
 ani = "anisette.cli:app"
@@ -25,16 +22,19 @@ anisette = "anisette.cli:app"
 
 [dependency-groups]
 dev = [
-    "furo>=2024.8.6",
-    "myst-parser>=3.0.1",
-    "packaging>=24.2",
-    "pre-commit>=4.1.0",
-    "pyright>=1.1.392.post0",
-    "pytest>=8.3.4",
+    "basedpyright>=1.31.4",
+    "furo>=2025.7.19",
+    "myst-parser>=4.0.1; python_version >= '3.10'",
+    "packaging>=25.0",
+    "pre-commit>=4.3.0",
     "ruff>=0.9.3",
-    "sphinx>=7.4.7",
+    "sphinx>=8.2.3; python_version >= '3.11'",
     "sphinx-autoapi>=3.6.0",
     "tomli>=2.2.1",
+]
+test = [
+    "psutil>=7.0.0",
+    "pytest>=8.4.2",
 ]
 
 [tool.pyright]
@@ -48,9 +48,7 @@ reportImplicitOverride = true
 line-length = 120
 
 [tool.ruff.lint]
-select = [
-    "ALL",
-]
+select = ["ALL"]
 ignore = [
     "FIX002", # resolving TODOs
 
@@ -64,7 +62,7 @@ ignore = [
     "S603", # false-positive subprocess call (https://github.com/astral-sh/ruff/issues/4045)
 
     "PLR2004", # "magic" values >.>
-    "FBT", # boolean "traps"
+    "FBT",     # boolean "traps"
 
     "TD",
     "FIX",
@@ -76,9 +74,7 @@ ignore = [
 "scripts/*" = ["T201"]
 
 [tool.pytest.ini_options]
-pythonpath = [
-  "."
-]
+pythonpath = ["."]
 
 [tool.setuptools]
 license-files = []
