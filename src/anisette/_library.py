@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import io
 import logging
+import tarfile
+import zipfile
 from typing import IO, TYPE_CHECKING, BinaryIO
 
 from elftools.elf.sections import SymbolTableSection
-from fs.errors import CreateFailed, ResourceNotFound
-from fs.tarfs import TarFS
-from fs.zipfs import ZipFS
 from typing_extensions import Self
 
 from ._arch import Architecture
@@ -14,7 +14,6 @@ from ._fs import VirtualFileSystem
 
 if TYPE_CHECKING:
     from elftools.elf.elffile import ELFFile
-    from fs.base import FS
 
 
 logging.getLogger(__name__)
@@ -83,7 +82,7 @@ class LibraryStore(VirtualFileSystem):
     )
     _ARCH = Architecture.ARM64
 
-    def __init__(self, fs: FS | None) -> None:
+    def __init__(self, fs: VirtualFileSystem | None) -> None:
         super().__init__(fs)
 
     def open_library(self, name: str) -> IO:
@@ -97,43 +96,70 @@ class LibraryStore(VirtualFileSystem):
     def from_virtfs(cls, fs: VirtualFileSystem) -> Self:
         return cls(fs.fs)
 
+    @staticmethod
+    def _candidates_for(lib: str, arch: Architecture) -> tuple[str, str, str]:
+        return (
+            lib,
+            f"libs/{lib}",
+            f"lib/{arch.value}/{lib}",
+        )
+
     @classmethod
-    def from_fs(cls, fs: FS) -> Self:
-        lib_store = cls(None)
+    def _load_from_tar(cls, f: BinaryIO, lib_store: LibraryStore) -> bool:
+        try:
+            with tarfile.open(fileobj=f, mode="r:*") as tf:
+                names = {m.name for m in tf.getmembers() if m.isfile()}
+                for lib in cls._LIBRARIES:
+                    for path in cls._candidates_for(lib, cls._ARCH):
+                        if path in names:
+                            member = tf.getmember(path)
+                            data = tf.extractfile(member)
+                            if data is None:
+                                continue
+                            with data:
+                                lib_store.add_library(lib, data)
+                            break
+                    else:
+                        msg = "Archive is missing library file: %s"
+                        raise RuntimeError(msg % lib)
+        except tarfile.ReadError:
+            return False
+        else:
+            return True
 
-        for lib in cls._LIBRARIES:
-            possible_paths = (
-                lib,
-                f"libs/{lib}",
-                f"lib/{cls._ARCH.value}/{lib}",
-            )
-
-            for path in possible_paths:
-                try:
-                    with fs.open(path, "rb") as f:
-                        lib_store.add_library(lib, f)
-                    break
-                except ResourceNotFound:
-                    pass
-            else:
-                msg = "FS is missing library file: %s"
-                raise RuntimeError(msg, lib)
-
-        return lib_store
+    @classmethod
+    def _load_from_zip(cls, f: BinaryIO, lib_store: LibraryStore) -> bool:
+        try:
+            with zipfile.ZipFile(f) as zf:
+                names = set(zf.namelist())
+                for lib in cls._LIBRARIES:
+                    for path in cls._candidates_for(lib, cls._ARCH):
+                        if path in names:
+                            with zf.open(path, "r") as data:
+                                lib_store.add_library(lib, data)
+                            break
+                    else:
+                        msg = "Archive is missing library file: %s"
+                        raise RuntimeError(msg % lib)
+        except zipfile.BadZipFile:
+            return False
+        else:
+            return True
 
     @classmethod
     def from_file(cls, file: BinaryIO) -> Self:
-        try:
-            with TarFS(file) as f:
-                return cls.from_fs(f)
-        except CreateFailed:
-            pass
+        """Load libraries from a tar or zip archive using only stdlib."""
+        lib_store = cls(None)
 
-        try:
-            with ZipFS(file) as f:
-                return cls.from_fs(f)
-        except CreateFailed:
-            pass
+        # Buffer the file so we can attempt multiple formats without relying on seekability.
+        data = file.read()
+        buf1 = io.BytesIO(data)
+        if cls._load_from_tar(buf1, lib_store):
+            return lib_store
+
+        buf2 = io.BytesIO(data)
+        if cls._load_from_zip(buf2, lib_store):
+            return lib_store
 
         msg = "Unknown file format"
         raise TypeError(msg)

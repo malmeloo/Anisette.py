@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io as _io
 import logging
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Callable
@@ -272,8 +273,8 @@ class VM:
         library_index = len(self._loaded_libs)
         with self._lib_store.open_library(name) as f:
             elf_data = f.read()
-            f.seek(0)
-            elf = ELFFile(f)
+            # Construct ELF from an in-memory buffer to avoid lifecycle issues of the context-managed stream
+            elf = ELFFile(_io.BytesIO(elf_data))
 
         chosen_base = self._lib_allocator.alloc(0x10000000)[0]
 
