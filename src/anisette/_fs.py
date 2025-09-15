@@ -41,8 +41,8 @@ class VirtualFileSystem:
         else:
             self._tree = {}
 
-        # fd table: list of (path, mode, buffer)
-        self._file_handles: list[tuple[str, str, io.BytesIO]] = []
+        # fd table: fd -> (path, mode, buffer)
+        self._file_handles: dict[int, tuple[str, str, io.BytesIO]] = {}
 
     @property
     def fs(self) -> VirtualFileSystem:
@@ -212,8 +212,11 @@ class VirtualFileSystem:
             data = bytes(self._get_file(path))
             buf = io.BytesIO(data)
 
-        fd = len(self._file_handles)
-        self._file_handles.append((path, mode, buf))
+        # pick the lowest available fd
+        fd = 0
+        while fd in self._file_handles:
+            fd += 1
+        self._file_handles[fd] = (path, mode, buf)
         return fd
 
     def close(self, fd: int) -> None:
