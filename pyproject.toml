@@ -4,6 +4,7 @@ version = "1.2.2"
 description = "Anisette provider"
 readme = "README.md"
 requires-python = ">=3.9"
+license-files = ["LICENSE"]
 dependencies = [
     "certifi>=2025.1.31",
     "fs>=2.4.16",
@@ -75,9 +76,6 @@ ignore = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-
-[tool.setuptools]
-license-files = []
 
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
