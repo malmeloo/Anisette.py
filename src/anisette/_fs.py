@@ -45,11 +45,6 @@ class VirtualFileSystem:
         self._file_handles: dict[int, tuple[str, str, io.BytesIO]] = {}
 
     @property
-    def fs(self) -> VirtualFileSystem:
-        # For compatibility with older code expecting `.fs` attribute
-        return self
-
-    @property
     def root(self) -> Directory:
         return self._tree
 

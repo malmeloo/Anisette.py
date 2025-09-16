@@ -92,10 +92,6 @@ class LibraryStore(VirtualFileSystem):
         with self.easy_open(name, "wb+") as f:
             f.write(data.read())
 
-    @classmethod
-    def from_virtfs(cls, fs: VirtualFileSystem) -> Self:
-        return cls(fs.fs)
-
     @staticmethod
     def _candidates_for(lib: str, arch: Architecture) -> tuple[str, str, str]:
         return (
