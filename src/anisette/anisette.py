@@ -215,7 +215,7 @@ class Anisette:
             "X-Apple-I-MD-RINFO": "17106176",
             "X-Apple-I-SRL-NO": "0",
             "X-Apple-I-TimeZone": str(datetime.now().astimezone().tzinfo),
-            "X-Apple-Locale": locale.getdefaultlocale()[0] or "en_US",
+            "X-Apple-Locale": locale.getlocale()[0] or "en_US",
             "X-MMe-Client-Info": device.server_friendly_description,
             "X-Mme-Device-Id": device.unique_device_identifier,
         }

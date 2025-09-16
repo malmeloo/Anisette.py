@@ -51,7 +51,7 @@ class AnisetteProvider:
             if lib_fs is None:
                 lib_fs = self._fs_fallback()
                 self._fs_collection.add("libs", lib_fs)
-            self._lib_store = LibraryStore.from_virtfs(lib_fs)
+            self._lib_store = LibraryStore(lib_fs)
         return self._lib_store
 
     @property
