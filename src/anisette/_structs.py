@@ -70,8 +70,3 @@ class c_stat(Structure):  # noqa: N801
   unsigned int __unused4; \
   unsigned int __unused5; \
 """
-
-tmp = c_stat()
-tmp_len = len(bytes(tmp))
-# print(tmpLen)
-assert tmp_len == 128
