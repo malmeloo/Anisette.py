@@ -2,9 +2,14 @@
 
 from importlib.metadata import version
 
-from ._device import AnisetteDeviceConfig
-from .anisette import Anisette, AnisetteHeaders
+from ._device import Device
+from .anisette import Anisette, AnisetteHeaders, AnisetteState
 
 __version__ = version("anisette")
 
-__all__ = ("Anisette", "AnisetteDeviceConfig", "AnisetteHeaders")
+__all__ = (
+    "Anisette",
+    "AnisetteHeaders",
+    "AnisetteState",
+    "Device",
+)

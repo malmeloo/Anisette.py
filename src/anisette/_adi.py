@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from ctypes import c_ulonglong
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -8,7 +9,6 @@ from ._util import u_to_s32
 from ._vm import VM, Architecture
 
 if TYPE_CHECKING:
-    from ._fs import VirtualFileSystem
     from ._library import LibraryStore
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,10 @@ class OneTimePassword:
 
 
 class ADI:
-    def __init__(self, fs: VirtualFileSystem, lib_store: LibraryStore, identifier: str) -> None:
-        self._vm = VM.create(fs, lib_store, Architecture.ARM64)
+    def __init__(self, lib_store: LibraryStore, identifier: str, adi_pb: bytes | None = None) -> None:
+        self._vm = VM.create(lib_store, Architecture.ARM64, adi_pb)
 
         self._provisioning_path: str | None = None
-        self._identifier: str | None = None
 
         ssc_library = self._vm.load_library("libstoreservicescore.so")
 
@@ -62,63 +61,14 @@ class ADI:
     def alloc_stats(self) -> tuple[float, float, float]:
         return self._vm.alloc_stats
 
-    def _set_provisioning_path(self, value: str) -> None:
-        p_path = self._vm.temp_alloc_data(value.encode("utf-8") + b"\x00")
-        self._vm.invoke_cdecl(self.__pADISetProvisioningPath, [p_path])
-        self._provisioning_path = value
-        self._vm.temp_free(p_path)
-
-    def _set_identifier(self, value: str) -> None:
-        self._identifier = value
-        logger.debug("Setting identifier %s", value)
-        identifier = value.encode("utf-8")
-        p_identifier = self._vm.temp_alloc_data(identifier)
-        self._vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
-        self._vm.temp_free(p_identifier)
-
-    def _load_library(self, library_path: str) -> None:
-        p_library_path = self._vm.temp_alloc_data(library_path.encode("utf-8") + b"\x00")
-        self._vm.invoke_cdecl(self.__pADILoadLibraryWithPath, [p_library_path])
-        self._vm.temp_free(p_library_path)
-
-    def erase_provisioning(self) -> None:
-        raise NotImplementedError
-
-    def synchronize(self) -> None:
-        raise NotImplementedError
-
-    def destroy_provisioning(self) -> None:
-        raise NotImplementedError
-
-    def end_provisioning(self, session: int, persistent_token_metadata: bytes, trust_key: bytes) -> None:
-        p_persistent_token_metadata = self._vm.temp_alloc_data(persistent_token_metadata)
-        p_trust_key = self._vm.temp_alloc_data(trust_key)
-
-        ret = self._vm.invoke_cdecl(
-            self.__pADIProvisioningEnd,
-            [
-                session,
-                p_persistent_token_metadata,
-                len(persistent_token_metadata),
-                p_trust_key,
-                len(trust_key),
-            ],
-        )
-
-        self._vm.temp_free(p_persistent_token_metadata)
-        self._vm.temp_free(p_trust_key)
-
-        logger.debug("0x%X", session)
-        logger.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
-        logger.debug("Trust key: %s (len: %d)", trust_key.hex(), len(trust_key))
-
-        logger.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
-        assert ret == 0
+    @property
+    def adi_pb(self) -> bytes | None:
+        return self._vm.adi_pb
 
     def start_provisioning(
         self,
-        ds_id: int,
         server_provisioning_intermediate_metadata: bytes,
+        ds_id: int = c_ulonglong(-2).value,
     ) -> ClientProvisioningIntermediateMetadata:
         logger.debug("ADI.start_provisioning")
         # FIXME: !!!
@@ -162,7 +112,32 @@ class ADI:
         # assert(False)
         return ClientProvisioningIntermediateMetadata(self, cpim_bytes, session)
 
-    def is_machine_provisioned(self, ds_id: int) -> bool:
+    def end_provisioning(self, session: int, persistent_token_metadata: bytes, trust_key: bytes) -> None:
+        p_persistent_token_metadata = self._vm.temp_alloc_data(persistent_token_metadata)
+        p_trust_key = self._vm.temp_alloc_data(trust_key)
+
+        ret = self._vm.invoke_cdecl(
+            self.__pADIProvisioningEnd,
+            [
+                session,
+                p_persistent_token_metadata,
+                len(persistent_token_metadata),
+                p_trust_key,
+                len(trust_key),
+            ],
+        )
+
+        self._vm.temp_free(p_persistent_token_metadata)
+        self._vm.temp_free(p_trust_key)
+
+        logger.debug("0x%X", session)
+        logger.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
+        logger.debug("Trust key: %s (len: %d)", trust_key.hex(), len(trust_key))
+
+        logger.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
+        assert ret == 0
+
+    def is_machine_provisioned(self, ds_id: int = c_ulonglong(-2).value) -> bool:
         logger.debug("ADI.is_machine_provisioned")
 
         error_code = u_to_s32(self._vm.invoke_cdecl(self.__pADIGetLoginCode, [ds_id]))
@@ -175,10 +150,7 @@ class ADI:
         msg = f"Unknown errorCode: {error_code:d}=0x{error_code:X}"
         raise RuntimeError(msg)
 
-    def dispose(self) -> None:
-        raise NotImplementedError
-
-    def request_otp(self, ds_id: int) -> OneTimePassword:
+    def request_otp(self, ds_id: int = c_ulonglong(-2).value) -> OneTimePassword:
         logger.debug("ADI.request_otp")
         # FIXME: !!!
 
@@ -219,3 +191,21 @@ class ADI:
         mid_bytes = self._vm.mem_read(mid, mid_length)
 
         return OneTimePassword(self, otp_bytes, mid_bytes)
+
+    def _set_provisioning_path(self, value: str) -> None:
+        p_path = self._vm.temp_alloc_data(value.encode("utf-8") + b"\x00")
+        self._vm.invoke_cdecl(self.__pADISetProvisioningPath, [p_path])
+        self._provisioning_path = value
+        self._vm.temp_free(p_path)
+
+    def _set_identifier(self, value: str) -> None:
+        logger.debug("Setting identifier %s", value)
+        identifier = value.encode("utf-8")
+        p_identifier = self._vm.temp_alloc_data(identifier)
+        self._vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
+        self._vm.temp_free(p_identifier)
+
+    def _load_library(self, library_path: str) -> None:
+        p_library_path = self._vm.temp_alloc_data(library_path.encode("utf-8") + b"\x00")
+        self._vm.invoke_cdecl(self.__pADILoadLibraryWithPath, [p_library_path])
+        self._vm.temp_free(p_library_path)
