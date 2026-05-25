@@ -3,20 +3,14 @@ from __future__ import annotations
 import logging
 import os
 import platform
-import re
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Literal
 
-import certifi
-import urllib3
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-
-URL_REGEX = re.compile(r"^https?://[^\s/$.?#].\S*$")
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +38,7 @@ def s_to_u64(value: int) -> int:
 @contextmanager
 def open_file(fp: BinaryIO | str | Path, mode: Literal["rb", "wb+"] = "rb") -> Iterator[BinaryIO]:
     if isinstance(fp, str):
-        if URL_REGEX.match(fp):
-            with urllib3.PoolManager(ca_certs=certifi.where()) as http:
-                r = http.request("GET", fp)
-            fp = BytesIO(r.data)
-        else:
-            fp = Path(fp)
+        fp = Path(fp)
 
     if isinstance(fp, Path):
         file = fp.open(mode)

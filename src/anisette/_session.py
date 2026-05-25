@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
-import urllib3
+import httpx
 
 if TYPE_CHECKING:
     from ._adi import ADI
@@ -38,45 +38,41 @@ class ProvisioningSession:
         self._adi = adi
         self._device = device
 
-        self._http = urllib3.PoolManager(ssl_context=get_ssl_context())
+        self._http = httpx.AsyncClient(verify=get_ssl_context())
         self._url_bag: UrlBag | None = None
 
     @property
     def adi(self) -> ADI:
         return self._adi
 
-    @adi.setter
-    def adi(self, adi: ADI) -> None:
-        logger.debug("Attached new ADI to ProvisioningSession")
-        self._adi = adi
+    @property
+    def device(self) -> Device:
+        return self._device
 
-    def provision(self, ds_id: int = c_ulonglong(-2).value) -> None:
+    async def provision(self, ds_id: int = c_ulonglong(-2).value) -> None:
+        urls = await self._get_urls()
+
         extra_headers = {
             "X-Apple-I-Client-Time": time(),
         }
-        start_provisioning_plist = self._post(
-            self._urls["midStartProvisioning"],
+        start_provisioning_plist = await self._post(
+            urls["midStartProvisioning"],
             plistlib.dumps({"Header": {}, "Request": {}}).decode(),
             extra_headers,
         )
 
         spim_plist = plistlib.loads(start_provisioning_plist)
-        spim_response = spim_plist["Response"]
-        spim_str = spim_response["spim"]
-        logger.debug(spim_str)
+        spim = base64.b64decode(spim_plist["Response"]["spim"])
 
-        spim = base64.b64decode(spim_str)
-
-        cpim = self._adi.start_provisioning(spim, ds_id)
-        # FIXME: scope (failure) try { adi.destroyProvisioning(cpim.session); } catch(Throwable) {}
+        cpim = await self._adi.async_start_provisioning(spim, ds_id)
 
         logger.debug("cpim: %s", cpim.cpim)
 
         extra_headers = {
             "X-Apple-I-Client-Time": time(),
         }
-        end_provisioning_plist = self._post(
-            self._urls["midFinishProvisioning"],
+        end_provisioning_plist = await self._post(
+            urls["midFinishProvisioning"],
             plistlib.dumps(
                 {
                     "Header": {},
@@ -96,14 +92,13 @@ class ProvisioningSession:
         persistent_token_metadata = base64.b64decode(spim_response["ptm"])
         trust_key = base64.b64decode(spim_response["tk"])
 
-        self._adi.end_provisioning(cpim.session, persistent_token_metadata, trust_key)
+        await self._adi.async_end_provisioning(cpim.session, persistent_token_metadata, trust_key)
 
-    @property
-    def _urls(self) -> UrlBag:
+    async def _get_urls(self) -> UrlBag:
         if self._url_bag is not None:
             return self._url_bag
 
-        content = self._get("https://gsa.apple.com/grandslam/GsService2/lookup")
+        content = await self._get("https://gsa.apple.com/grandslam/GsService2/lookup")
         plist = plistlib.loads(content)
 
         return {
@@ -111,22 +106,22 @@ class ProvisioningSession:
             "midFinishProvisioning": plist["urls"]["midFinishProvisioning"],
         }
 
-    def _get(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
-        return self._request(
+    async def _get(self, url: str, extra_headers: dict[str, str] | None = None) -> bytes:
+        return await self._request(
             "GET",
             url,
             extra_headers or {},
         )
 
-    def _post(self, url: str, data: str, extra_headers: dict[str, str] | None = None) -> bytes:
-        return self._request(
+    async def _post(self, url: str, data: str, extra_headers: dict[str, str] | None = None) -> bytes:
+        return await self._request(
             "POST",
             url,
             extra_headers or {},
             data=data,
         )
 
-    def _request(
+    async def _request(
         self,
         method: str,
         url: str,
@@ -134,8 +129,8 @@ class ProvisioningSession:
         data: str | None = None,
     ) -> bytes:
         headers = self._base_headers | extra_headers
-        response = self._http.request(method, url, body=data, headers=headers, timeout=5.0)
-        return response.data
+        response = await self._http.request(method, url, content=data, headers=headers, timeout=5.0)
+        return response.content
 
     @property
     def _base_headers(self) -> dict[str, str]:

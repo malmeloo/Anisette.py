@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from ctypes import c_ulonglong
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from threading import RLock
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from ._util import u_to_s32
 from ._vm import VM, Architecture
@@ -16,25 +18,40 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ClientProvisioningIntermediateMetadata:
-    adi: ADI
     cpim: bytes
     session: int
 
 
 @dataclass(frozen=True)
 class OneTimePassword:
-    adi: ADI
     otp: bytes
     machine_id: bytes
 
 
+T = TypeVar("T")
+
+
+class _Locked(Generic[T]):
+    def __init__(self, value: T) -> None:
+        self._value = value
+        self._lock = RLock()
+
+    def __enter__(self) -> T:
+        self._lock.acquire()
+        return self._value
+
+    def __exit__(self, *args: object) -> None:
+        self._lock.release()
+
+
 class ADI:
     def __init__(self, lib_store: LibraryStore, identifier: str, adi_pb: bytes | None = None) -> None:
-        self._vm = VM.create(lib_store, Architecture.ARM64, adi_pb)
+        self._vm = _Locked(VM.create(lib_store, Architecture.ARM64, adi_pb))
 
         self._provisioning_path: str | None = None
 
-        ssc_library = self._vm.load_library("libstoreservicescore.so")
+        with self._vm as vm:
+            ssc_library = vm.load_library("libstoreservicescore.so")
 
         logger.debug("Loading Android-specific symbols...")
 
@@ -53,17 +70,38 @@ class ADI:
         self.__pADIDispose = ssc_library.resolve_symbol_by_name("jk24uiwqrg")
         self.__pADIOTPRequest = ssc_library.resolve_symbol_by_name("qi864985u0")
 
-        self._set_identifier(identifier)
-        self._set_provisioning_path(".")
-        self._load_library(".")
+        with self._vm as vm:
+            self._set_identifier(identifier)
+            self._set_provisioning_path(".")
+            self._load_library(".")
+
+    @classmethod
+    async def create_async(cls, lib_store: LibraryStore, identifier: str, adi_pb: bytes | None = None) -> ADI:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, cls, lib_store, identifier, adi_pb)
 
     @property
-    def alloc_stats(self) -> tuple[float, float, float]:
-        return self._vm.alloc_stats
+    def is_instable(self) -> bool:
+        with self._vm as vm:
+            return any(usage >= 0.5 for usage in vm.alloc_stats)
 
     @property
     def adi_pb(self) -> bytes | None:
-        return self._vm.adi_pb
+        with self._vm as vm:
+            return vm.adi_pb
+
+    async def async_start_provisioning(
+        self,
+        server_provisioning_intermediate_metadata: bytes,
+        ds_id: int = c_ulonglong(-2).value,
+    ) -> ClientProvisioningIntermediateMetadata:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self.start_provisioning,
+            server_provisioning_intermediate_metadata,
+            ds_id,
+        )
 
     def start_provisioning(
         self,
@@ -73,62 +111,79 @@ class ADI:
         logger.debug("ADI.start_provisioning")
         # FIXME: !!!
 
-        p_cpim = self._vm.temp_alloc(8)  # ubyte*
-        p_cpim_length = self._vm.temp_alloc(4)  # uint
-        p_session = self._vm.temp_alloc(4)  # uint
-        p_server_provisioning_intermediate_metadata = self._vm.temp_alloc_data(
-            server_provisioning_intermediate_metadata,
-        )
-        logger.debug("0x%X", ds_id)
-        logger.debug(server_provisioning_intermediate_metadata.hex())
+        with self._vm as vm:
+            p_cpim = vm.temp_alloc(8)  # ubyte*
+            p_cpim_length = vm.temp_alloc(4)  # uint
+            p_session = vm.temp_alloc(4)  # uint
+            p_server_provisioning_intermediate_metadata = vm.temp_alloc_data(
+                server_provisioning_intermediate_metadata,
+            )
+            logger.debug("0x%X", ds_id)
+            logger.debug(server_provisioning_intermediate_metadata.hex())
 
-        ret = self._vm.invoke_cdecl(
-            self.__pADIProvisioningStart,
-            [
-                ds_id,
-                p_server_provisioning_intermediate_metadata,
-                len(server_provisioning_intermediate_metadata),
-                p_cpim,
-                p_cpim_length,
-                p_session,
-            ],
-        )
-        logger.debug("%s: %X=%d", "pADIProvisioningStart", ret, u_to_s32(ret))
-        assert ret == 0
+            ret = vm.invoke_cdecl(
+                self.__pADIProvisioningStart,
+                [
+                    ds_id,
+                    p_server_provisioning_intermediate_metadata,
+                    len(server_provisioning_intermediate_metadata),
+                    p_cpim,
+                    p_cpim_length,
+                    p_session,
+                ],
+            )
+            logger.debug("%s: %X=%d", "pADIProvisioningStart", ret, u_to_s32(ret))
+            assert ret == 0
 
-        self._vm.temp_free(p_cpim)
-        self._vm.temp_free(p_cpim_length)
-        self._vm.temp_free(p_session)
-        self._vm.temp_free(p_server_provisioning_intermediate_metadata)
+            vm.temp_free(p_cpim)
+            vm.temp_free(p_cpim_length)
+            vm.temp_free(p_session)
+            vm.temp_free(p_server_provisioning_intermediate_metadata)
 
-        # Readback output
-        cpim = self._vm.read_u64(p_cpim)
-        logger.debug("Wrote data to 0x%X", cpim)
-        cpim_length = self._vm.read_u32(p_cpim_length)
-        cpim_bytes = self._vm.mem_read(cpim, cpim_length)
-        session = self._vm.read_u32(p_session)
+            # Readback output
+            cpim = vm.read_u64(p_cpim)
+            logger.debug("Wrote data to 0x%X", cpim)
+            cpim_length = vm.read_u32(p_cpim_length)
+            cpim_bytes = vm.mem_read(cpim, cpim_length)
+            session = vm.read_u32(p_session)
 
         # logger.debug(cpim_length, cpim_bytes.hex(), session)
         # assert(False)
-        return ClientProvisioningIntermediateMetadata(self, cpim_bytes, session)
+        return ClientProvisioningIntermediateMetadata(cpim_bytes, session)
 
-    def end_provisioning(self, session: int, persistent_token_metadata: bytes, trust_key: bytes) -> None:
-        p_persistent_token_metadata = self._vm.temp_alloc_data(persistent_token_metadata)
-        p_trust_key = self._vm.temp_alloc_data(trust_key)
-
-        ret = self._vm.invoke_cdecl(
-            self.__pADIProvisioningEnd,
-            [
-                session,
-                p_persistent_token_metadata,
-                len(persistent_token_metadata),
-                p_trust_key,
-                len(trust_key),
-            ],
+    async def async_end_provisioning(
+        self,
+        session: int,
+        persistent_token_metadata: bytes,
+        trust_key: bytes,
+    ) -> None:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            self.end_provisioning,
+            session,
+            persistent_token_metadata,
+            trust_key,
         )
 
-        self._vm.temp_free(p_persistent_token_metadata)
-        self._vm.temp_free(p_trust_key)
+    def end_provisioning(self, session: int, persistent_token_metadata: bytes, trust_key: bytes) -> None:
+        with self._vm as vm:
+            p_persistent_token_metadata = vm.temp_alloc_data(persistent_token_metadata)
+            p_trust_key = vm.temp_alloc_data(trust_key)
+
+            ret = vm.invoke_cdecl(
+                self.__pADIProvisioningEnd,
+                [
+                    session,
+                    p_persistent_token_metadata,
+                    len(persistent_token_metadata),
+                    p_trust_key,
+                    len(trust_key),
+                ],
+            )
+
+            vm.temp_free(p_persistent_token_metadata)
+            vm.temp_free(p_trust_key)
 
         logger.debug("0x%X", session)
         logger.debug("Persistent token: %s (len: %i)", persistent_token_metadata.hex(), len(persistent_token_metadata))
@@ -137,10 +192,15 @@ class ADI:
         logger.debug("%s: %X=%d", "pADIProvisioningEnd", ret, u_to_s32(ret))
         assert ret == 0
 
+    async def async_is_machine_provisioned(self, ds_id: int = c_ulonglong(-2).value) -> bool:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.is_machine_provisioned, ds_id)
+
     def is_machine_provisioned(self, ds_id: int = c_ulonglong(-2).value) -> bool:
         logger.debug("ADI.is_machine_provisioned")
 
-        error_code = u_to_s32(self._vm.invoke_cdecl(self.__pADIGetLoginCode, [ds_id]))
+        with self._vm as vm:
+            error_code = u_to_s32(vm.invoke_cdecl(self.__pADIGetLoginCode, [ds_id]))
 
         if error_code == 0:
             return True
@@ -150,62 +210,69 @@ class ADI:
         msg = f"Unknown errorCode: {error_code:d}=0x{error_code:X}"
         raise RuntimeError(msg)
 
+    async def async_request_otp(self, ds_id: int = c_ulonglong(-2).value) -> OneTimePassword:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.request_otp, ds_id)
+
     def request_otp(self, ds_id: int = c_ulonglong(-2).value) -> OneTimePassword:
         logger.debug("ADI.request_otp")
-        # FIXME: !!!
 
-        p_otp = self._vm.temp_alloc(8)
-        p_otp_length = self._vm.temp_alloc(4)
-        p_mid = self._vm.temp_alloc(8)
-        p_mid_length = self._vm.temp_alloc(4)
+        with self._vm as vm:
+            p_otp = vm.temp_alloc(8)
+            p_otp_length = vm.temp_alloc(4)
+            p_mid = vm.temp_alloc(8)
+            p_mid_length = vm.temp_alloc(4)
 
-        # ubyte* otp;
-        # uint otpLength;
-        # ubyte* mid;
-        # uint midLength;
+            # ubyte* otp;
+            # uint otpLength;
+            # ubyte* mid;
+            # uint midLength;
 
-        ret = self._vm.invoke_cdecl(
-            self.__pADIOTPRequest,
-            [
-                ds_id,
-                p_mid,
-                p_mid_length,
-                p_otp,
-                p_otp_length,
-            ],
-        )
-        logger.debug("%s: %X=%d", "pADIOTPRequest", ret, u_to_s32(ret))
-        assert ret == 0
+            ret = vm.invoke_cdecl(
+                self.__pADIOTPRequest,
+                [
+                    ds_id,
+                    p_mid,
+                    p_mid_length,
+                    p_otp,
+                    p_otp_length,
+                ],
+            )
+            logger.debug("%s: %X=%d", "pADIOTPRequest", ret, u_to_s32(ret))
+            assert ret == 0
 
-        self._vm.temp_free(p_otp)
-        self._vm.temp_free(p_otp_length)
-        self._vm.temp_free(p_mid)
-        self._vm.temp_free(p_mid_length)
+            vm.temp_free(p_otp)
+            vm.temp_free(p_otp_length)
+            vm.temp_free(p_mid)
+            vm.temp_free(p_mid_length)
 
-        otp = self._vm.read_u64(p_otp)
-        otp_length = self._vm.read_u32(p_otp_length)
-        otp_bytes = self._vm.mem_read(otp, otp_length)
+            otp = vm.read_u64(p_otp)
+            otp_length = vm.read_u32(p_otp_length)
+            otp_bytes = vm.mem_read(otp, otp_length)
 
-        mid = self._vm.read_u64(p_mid)
-        mid_length = self._vm.read_u32(p_mid_length)
-        mid_bytes = self._vm.mem_read(mid, mid_length)
+            mid = vm.read_u64(p_mid)
+            mid_length = vm.read_u32(p_mid_length)
+            mid_bytes = vm.mem_read(mid, mid_length)
 
-        return OneTimePassword(self, otp_bytes, mid_bytes)
+        return OneTimePassword(otp_bytes, mid_bytes)
 
     def _set_provisioning_path(self, value: str) -> None:
-        p_path = self._vm.temp_alloc_data(value.encode("utf-8") + b"\x00")
-        self._vm.invoke_cdecl(self.__pADISetProvisioningPath, [p_path])
-        self._provisioning_path = value
-        self._vm.temp_free(p_path)
+        with self._vm as vm:
+            p_path = vm.temp_alloc_data(value.encode("utf-8") + b"\x00")
+            vm.invoke_cdecl(self.__pADISetProvisioningPath, [p_path])
+            self._provisioning_path = value
+            vm.temp_free(p_path)
 
     def _set_identifier(self, value: str) -> None:
-        logger.debug("Setting identifier %s", value)
-        identifier = value.encode("utf-8")
-        p_identifier = self._vm.temp_alloc_data(identifier)
-        self._vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
-        self._vm.temp_free(p_identifier)
+        with self._vm as vm:
+            logger.debug("Setting identifier %s", value)
+            identifier = value.encode("utf-8")
+            p_identifier = vm.temp_alloc_data(identifier)
+            vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
+            vm.temp_free(p_identifier)
 
     def _load_library(self, library_path: str) -> None:
-        p_library_path = self._vm.temp_alloc_data(library_path.encode("utf-8") + b"\x00")
-        self._vm.invoke_cdecl(self.__pADILoadLibraryWithPath, [p_library_path])
-        self._vm.temp_free(p_library_path)
+        with self._vm as vm:
+            p_library_path = vm.temp_alloc_data(library_path.encode("utf-8") + b"\x00")
+            vm.invoke_cdecl(self.__pADILoadLibraryWithPath, [p_library_path])
+            vm.temp_free(p_library_path)
