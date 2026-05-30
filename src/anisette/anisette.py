@@ -130,6 +130,11 @@ class BaseAnisetteProvider(ABC):
         """Obtain Anisette headers for this session."""
         raise NotImplementedError
 
+    @abstractmethod
+    def save_libs(self, file: BinaryIO | str | Path) -> _MaybeCoro[None]:
+        """Save anisette libraries to a file."""
+        raise NotImplementedError
+
     @classmethod
     def init(
         cls,
@@ -196,19 +201,6 @@ class BaseAnisetteProvider(ABC):
             device=device,
             adi_pb=adi_pb,
         )
-
-    # def save_libs(self, file: BinaryIO | str | Path) -> None:
-    #     """
-    #     Save library data to a file. The size of this file is usually in the order of megabytes.
-
-    #     Library data is session-agnostic and may be used in as many sessions as you wish.
-    #     It can also be used to initialize a new session, without requiring the full Apple Music APK.
-
-    #     :param file: The file or path to save library data to.
-    #     :type file: BinaryIO, str, Path
-    #     """
-    #     with open_file(file, "wb+") as f:
-    #         self._ani.library_store.save(f)
 
     def to_json(self) -> AnisetteState:
         """
@@ -348,6 +340,22 @@ class AsyncAnisetteProvider(BaseAnisetteProvider):
             await session.provision()
 
     @override
+    async def save_libs(self, file: BinaryIO | str | Path) -> None:
+        """
+        Save library data to a file. The size of this file is usually in the order of megabytes.
+
+        Library data is session-agnostic and may be used in as many sessions as you wish.
+        It can also be used to initialize a new session, without requiring the full Apple Music APK.
+
+        :param file: The file or path to save library data to.
+        :type file: BinaryIO, str, Path
+        """
+        libs = await self._get_library_store()
+
+        with open_file(file, "wb+") as f:
+            libs.save(f)
+
+    @override
     async def get_headers(self) -> AnisetteHeaders:
         """
         Obtain Anisette headers for this session.
@@ -447,6 +455,22 @@ class AnisetteProvider(BaseAnisetteProvider):
         if not self.is_provisioned:
             session = self._get_session()
             asyncio.run(session.provision())
+
+    @override
+    def save_libs(self, file: BinaryIO | str | Path) -> None:
+        """
+        Save library data to a file. The size of this file is usually in the order of megabytes.
+
+        Library data is session-agnostic and may be used in as many sessions as you wish.
+        It can also be used to initialize a new session, without requiring the full Apple Music APK.
+
+        :param file: The file or path to save library data to.
+        :type file: BinaryIO, str, Path
+        """
+        libs = self._get_library_store()
+
+        with open_file(file, "wb+") as f:
+            libs.save(f)
 
     @override
     def get_headers(self) -> AnisetteHeaders:
