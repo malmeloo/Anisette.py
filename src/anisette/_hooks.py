@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import secrets
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -125,7 +126,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
             return
 
         st_mode = 33188
-        st_size = 624
+        st_size = len(ctx.vm.adi_pb)
     elif path_or_fd == ".":
         st_mode = 16877
         st_size = 4096
@@ -411,7 +412,7 @@ def _hook_system_property_get_impl(ctx: HookContext) -> None:
 
 
 def _hook_arc4random_impl(ctx: HookContext) -> None:
-    value = 0xDEADBEEF  # "Random number, chosen by fair dice roll"
+    value = int.from_bytes(secrets.token_bytes(4), "big")
     ctx.vm.reg_write(UC_ARM64_REG_X0, value)
 
 
