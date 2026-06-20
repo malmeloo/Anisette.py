@@ -28,7 +28,7 @@ class Device:
     user_agent: str = "akd/1.0 CFNetwork/1404.0.5 Darwin/22.3.0"
     device_uuid: str = field(default_factory=lambda: str(uuid.uuid4()).upper())
     local_user_uuid: str = field(default_factory=lambda: secrets.token_hex(32).upper())
-    adi_id: str = field(default_factory=lambda: secrets.token_hex(8).lower())
+    adi_id: str = field(default_factory=lambda: str(uuid.uuid4()).upper())
 
     @classmethod
     def from_json(cls, data: DeviceState) -> Self:

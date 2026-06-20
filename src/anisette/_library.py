@@ -145,12 +145,10 @@ class LibraryStore:
             return True
 
     @classmethod
-    def from_file(cls, file: BinaryIO) -> Self:
+    def from_bytes(cls, data: bytes) -> Self:
         """Load libraries from a tar or zip archive using only stdlib."""
         lib_store = cls()
 
-        # Buffer the file so we can attempt multiple formats without relying on seekability.
-        data = file.read()
         buf1 = io.BytesIO(data)
         if cls._load_from_tar(buf1, lib_store):
             return lib_store

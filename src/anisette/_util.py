@@ -3,10 +3,13 @@ from __future__ import annotations
 import logging
 import os
 import platform
+import re
 from contextlib import contextmanager
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Literal
+
+import httpx
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -37,6 +40,14 @@ def s_to_u64(value: int) -> int:
 
 @contextmanager
 def open_file(fp: BinaryIO | str | Path, mode: Literal["rb", "wb+"] = "rb") -> Iterator[BinaryIO]:
+    if isinstance(fp, str) and re.match(r"^https?://", fp):
+        with httpx.Client() as client:
+            resp = client.get(fp)
+            resp.raise_for_status()
+
+            fp = BytesIO(resp.content)
+            do_close = True
+
     if isinstance(fp, str):
         fp = Path(fp)
 

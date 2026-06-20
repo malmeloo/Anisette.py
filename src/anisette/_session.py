@@ -4,7 +4,6 @@ import base64
 import logging
 import plistlib
 import ssl
-from ctypes import c_ulonglong
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
@@ -12,7 +11,7 @@ from typing import TYPE_CHECKING, TypedDict
 import httpx
 
 if TYPE_CHECKING:
-    from ._adi import ADI
+    from ._adi import BaseADI, OneTimePassword
     from ._device import Device
 
 logger = logging.getLogger(__name__)
@@ -34,7 +33,7 @@ class UrlBag(TypedDict):
 
 
 class ProvisioningSession:
-    def __init__(self, adi: ADI, device: Device) -> None:
+    def __init__(self, adi: BaseADI, device: Device) -> None:
         self._adi = adi
         self._device = device
 
@@ -42,14 +41,17 @@ class ProvisioningSession:
         self._url_bag: UrlBag | None = None
 
     @property
-    def adi(self) -> ADI:
-        return self._adi
+    def adi_pb(self) -> bytes | None:
+        return self._adi.adi_pb
 
     @property
     def device(self) -> Device:
         return self._device
 
-    async def provision(self, ds_id: int = c_ulonglong(-2).value) -> None:
+    async def is_provisioned(self) -> bool:
+        return await self._adi.is_machine_provisioned()
+
+    async def provision(self) -> None:
         urls = await self._get_urls()
 
         extra_headers = {
@@ -64,7 +66,7 @@ class ProvisioningSession:
         spim_plist = plistlib.loads(start_provisioning_plist)
         spim = base64.b64decode(spim_plist["Response"]["spim"])
 
-        cpim = await self._adi.async_start_provisioning(spim, ds_id)
+        cpim = await self._adi.start_provisioning(spim)
 
         logger.debug("cpim: %s", cpim.cpim)
 
@@ -92,7 +94,10 @@ class ProvisioningSession:
         persistent_token_metadata = base64.b64decode(spim_response["ptm"])
         trust_key = base64.b64decode(spim_response["tk"])
 
-        await self._adi.async_end_provisioning(cpim.session, persistent_token_metadata, trust_key)
+        await self._adi.end_provisioning(cpim.session, persistent_token_metadata, trust_key)
+
+    async def request_otp(self) -> OneTimePassword:
+        return await self._adi.request_otp()
 
     async def _get_urls(self) -> UrlBag:
         if self._url_bag is not None:
