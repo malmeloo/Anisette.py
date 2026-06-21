@@ -6,8 +6,9 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
 from threading import RLock
+from typing import Generic, TypeVar
 
-from anisette import AnisetteProvider
+from anisette import BaseAnisetteProvider
 
 from ._exceptions import _AniError
 
@@ -40,8 +41,12 @@ def _get_config_dir(dir_name: str) -> Path | None:
     return path
 
 
-class _SessionManager:
-    def __init__(self, conf_dir: Path | None = None) -> None:
+_T = TypeVar("_T", bound=BaseAnisetteProvider)
+
+
+class SessionManager(Generic[_T]):
+    def __init__(self, prov_cls: type[_T], conf_dir: Path | None = None) -> None:
+        self._prov_cls: type[_T] = prov_cls
         conf_dir = conf_dir or _get_config_dir("anisette-py")
         if conf_dir is None:
             msg = "Unable to determine config directory"
@@ -76,7 +81,7 @@ class _SessionManager:
             with self.session_path.open("w") as f:
                 json.dump(data, f, indent=2)
 
-    def save(self, name: str, session: AnisetteProvider) -> None:
+    def save(self, name: str, session: _T) -> None:
         with self._get_session_json() as data:
             data["sessions"][name] = session.to_json()
 
@@ -84,13 +89,13 @@ class _SessionManager:
         with self._get_session_json() as data:
             return name in data["sessions"]
 
-    def new(self, name: str) -> AnisetteProvider:
+    def new(self, name: str) -> _T:
         if self.exists(name):
             msg = f"Session with name '{name}' already exists"
             raise _AniError(msg)
 
         with self._get_session_json() as data:
-            session = AnisetteProvider.init()
+            session = self._prov_cls.init()
 
             data["sessions"][name] = session.to_json()
 
@@ -104,7 +109,7 @@ class _SessionManager:
 
             del data["sessions"][name]
 
-    def get(self, name: str) -> AnisetteProvider:
+    def get(self, name: str) -> _T:
         with self._get_session_json() as data:
             if name not in data["sessions"]:
                 msg = f"Session with name '{name}' does not exist"
@@ -112,8 +117,8 @@ class _SessionManager:
 
             session_data = data["sessions"][name]
 
-        return AnisetteProvider.from_json(session_data)
+        return self._prov_cls.from_json(session_data)
 
-    def list(self) -> list[tuple[str, AnisetteProvider]]:
+    def list(self) -> list[tuple[str, _T]]:
         with self._get_session_json() as data:
             return [(name, self.get(name)) for name in data["sessions"]]

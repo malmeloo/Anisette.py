@@ -4,7 +4,7 @@ from importlib.metadata import version
 
 from ._adi import BaseADI, LocalADI, RemoteADI
 from ._device import Device
-from .anisette import AnisetteHeaders, AnisetteProvider, AnisetteState, AsyncAnisetteProvider
+from .anisette import AnisetteHeaders, AnisetteProvider, AnisetteState, AsyncAnisetteProvider, BaseAnisetteProvider
 
 __version__ = version("anisette")
 
@@ -14,6 +14,7 @@ __all__ = (
     "AnisetteState",
     "AsyncAnisetteProvider",
     "BaseADI",
+    "BaseAnisetteProvider",
     "Device",
     "LocalADI",
     "RemoteADI",

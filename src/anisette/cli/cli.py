@@ -16,7 +16,11 @@ from granian.constants import Interfaces
 from rich.console import Console
 from rich.table import Table
 
-from ._session import _SessionManager
+from anisette import AnisetteProvider
+
+from ._session import SessionManager
+
+logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +36,7 @@ class _AniError(Exception):
 def new(name: Annotated[str, typer.Argument(help="The name of the new session")] = "default") -> None:
     """Create a new Anisette session."""
     try:
-        sessions = _SessionManager()
+        sessions = SessionManager(AnisetteProvider)
     except _AniError as e:
         print(str(e))
         raise typer.Abort from None
@@ -50,7 +54,7 @@ def new(name: Annotated[str, typer.Argument(help="The name of the new session")]
 def remove(name: Annotated[str, typer.Argument(help="The name of the saved session to remove")] = "default") -> None:
     """Remove a saved Anisette session."""
     try:
-        sessions = _SessionManager()
+        sessions = SessionManager(AnisetteProvider)
     except _AniError as e:
         print(str(e))
         raise typer.Abort from None
@@ -68,7 +72,7 @@ def remove(name: Annotated[str, typer.Argument(help="The name of the saved sessi
 def get(name: Annotated[str, typer.Argument(help="The name of the saved session")] = "default") -> None:
     """Get Anisette data for a saved session."""
     try:
-        sessions = _SessionManager()
+        sessions = SessionManager(AnisetteProvider)
     except _AniError as e:
         print(str(e))
         raise typer.Abort from None
@@ -89,7 +93,7 @@ def get(name: Annotated[str, typer.Argument(help="The name of the saved session"
 def list_() -> None:
     """List Anisette sessions."""
     try:
-        sessions = _SessionManager()
+        sessions = SessionManager(AnisetteProvider)
     except _AniError as e:
         print(str(e))
         raise typer.Abort from None
@@ -111,13 +115,14 @@ def serve(
 ) -> None:
     """Serve Anisette data for a saved session."""
     os.environ["ANISETTE_FALLBACK_SESSION_NAME"] = name
+    os.environ["ANISETTE_LOG_LEVEL"] = str(logger.level)
 
     print(f"Starting server on {host}:{port}")
     print("Press CTRL+C to exit")
     print()
 
     Granian(
-        "anisette.server:app",
+        "anisette.cli.server:app",
         address=host,
         port=port,
         interface=Interfaces.ASGI,
