@@ -11,10 +11,13 @@ dependencies = [
     "typing-extensions>=4.12.2,<5.0.0",
     "unicorn>=2.1.1,<3.0.0",
     "websockets>=16.0",
+    # these deps are technically optional, but we want to make sure they are installed for the CLI to work properly
+    # we can put them in an extra once PEP 771 is implemented: https://peps.python.org/pep-0771/
+    "typer>=0.15.1",
+    "rich>=15.0.0",
+    "fastapi>=0.138.0",
+    "granian>=2.7.6",
 ]
-
-[project.optional-dependencies]
-cli = ["typer>=0.15.1", "rich>=13.9.4"]
 
 [project.scripts]
 ani = "anisette.cli:app"
