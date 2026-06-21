@@ -3,7 +3,7 @@ from __future__ import annotations
 import io as _io
 import logging
 from collections import OrderedDict
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
@@ -39,6 +39,9 @@ from ._library import (
     Library,
     LibraryStore,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 

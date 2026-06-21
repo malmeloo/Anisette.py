@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from itertools import pairwise
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class Allocator:
             *self._free_blocks,
             (self._base + self._size, -1),
         ]
-        for i, ((_, start), (end, _)) in enumerate(zip(blocks, blocks[1:])):
+        for i, ((_, start), (end, _)) in enumerate(pairwise(blocks)):
             if start <= address <= end:  # addr lies in this allocated (non-free) block
                 new_block = (address, address + size)
 

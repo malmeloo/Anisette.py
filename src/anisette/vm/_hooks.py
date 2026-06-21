@@ -238,7 +238,7 @@ def _hook_open(ctx: HookContext) -> None:
 
     logger.debug("open('%s', %s, %s)", path, oct(oflag), oct(mode))
 
-    assert path in ["./adi.pb"]
+    assert path == "./adi.pb"
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, ADIPB_FILDES)
 
@@ -317,9 +317,7 @@ def _hook_dlopen_wrapper(ctx: HookContext) -> None:
 
     logger.debug("dlopen('%s' (%s))", path, library_name)
 
-    assert library_name in [
-        "libCoreADI.so",
-    ]
+    assert library_name == "libCoreADI.so"
 
     library = ctx.vm.load_library(library_name)
     x0 = library.index

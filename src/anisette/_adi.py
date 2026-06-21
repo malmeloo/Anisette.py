@@ -15,9 +15,8 @@ import httpx
 from typing_extensions import Self, override
 from websockets.asyncio.client import ClientConnection, connect
 
-from ._library import LibraryStore
-from ._util import open_file, u_to_s32
-from ._vm import VM, Architecture
+from ._util import open_file
+from .vm import VM, Architecture, LibraryStore, u_to_s32
 
 if TYPE_CHECKING:
     from pathlib import Path
