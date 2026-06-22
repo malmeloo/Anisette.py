@@ -4,6 +4,8 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
+    git-hooks.url = "github:cachix/git-hooks.nix";
+
     pyproject-nix = {
       url = "github:pyproject-nix/pyproject.nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -25,7 +27,9 @@
 
   outputs =
     {
+      self,
       nixpkgs,
+      git-hooks,
       pyproject-nix,
       uv2nix,
       pyproject-build-systems,
@@ -50,39 +54,103 @@
         let
           pkgs = nixpkgs.legacyPackages.${system};
           python = pkgs.python3;
+
+          pythonSets =
+            (pkgs.callPackage pyproject-nix.build.packages {
+              inherit python;
+            }).overrideScope
+              (
+                lib.composeManyExtensions [
+                  pyproject-build-systems.overlays.wheel
+                  overlay
+                ]
+              );
         in
-        (pkgs.callPackage pyproject-nix.build.packages {
-          inherit python;
-        }).overrideScope
-          (
-            lib.composeManyExtensions [
-              pyproject-build-systems.overlays.wheel
-              overlay
-            ]
-          )
+        {
+          default = pythonSets;
+          dev = pythonSets.overrideScope editableOverlay;
+        }
+      );
+
+      venvs = forAllSystems (
+        system:
+        let
+          pythonSet = pythonSets.${system};
+        in
+        {
+          default = pythonSet.default.mkVirtualEnv "anisette" workspace.deps.default;
+          dev = pythonSet.dev.mkVirtualEnv "anisette-dev-env" workspace.deps.all;
+        }
       );
 
     in
     {
+      formatter = forAllSystems (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          config = self.checks.${system}.pre-commit-check.config;
+          inherit (config) package configFile;
+          script = ''
+            ${pkgs.lib.getExe package} run --all-files --config ${configFile}
+          '';
+        in
+        pkgs.writeShellScriptBin "pre-commit-run" script
+      );
+
+      checks = forAllSystems (system: {
+        pre-commit-check = git-hooks.lib.${system}.run {
+          src = ./.;
+          hooks = {
+            nixfmt.enable = true;
+
+            basedpyright = {
+              enable = true;
+              name = "basedpyright";
+              types = [ "python" ];
+              entry = "${venvs.${system}.dev}/bin/basedpyright --pythonpath ${venvs.${system}.dev}/bin/python";
+            };
+
+            ruff-check = {
+              enable = true;
+              name = "ruff-check";
+              types = [ "python" ];
+              entry = "${venvs.${system}.dev}/bin/ruff check --fix";
+            };
+
+            ruff-format = {
+              enable = true;
+              name = "ruff-format";
+              types = [ "python" ];
+              entry = "${venvs.${system}.dev}/bin/ruff format";
+            };
+          };
+        };
+      });
+
       devShells = forAllSystems (
         system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
-          pythonSet = pythonSets.${system}.overrideScope editableOverlay;
-          virtualenv = pythonSet.mkVirtualEnv "anisette-dev-env" workspace.deps.all;
+          inherit (self.checks.${system}.pre-commit-check) shellHook enabledPackages;
         in
         {
           default = pkgs.mkShell {
+            buildInputs = enabledPackages;
+
             packages = [
-              virtualenv
+              venvs.${system}.dev
               pkgs.uv
             ];
             env = {
               UV_NO_SYNC = "1";
-              UV_PYTHON = pythonSet.python.interpreter;
+              UV_PYTHON = pythonSets.${system}.dev.python.interpreter;
               UV_PYTHON_DOWNLOADS = "never";
             };
+
             shellHook = ''
+              ${shellHook}
+
               unset PYTHONPATH
               export REPO_ROOT=$(git rev-parse --show-toplevel)
             '';
@@ -91,7 +159,7 @@
       );
 
       packages = forAllSystems (system: {
-        default = pythonSets.${system}.mkVirtualEnv "anisette" workspace.deps.default;
+        default = pythonSets.${system}.default.mkVirtualEnv "anisette" workspace.deps.default;
       });
     };
 }
