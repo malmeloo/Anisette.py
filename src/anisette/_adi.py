@@ -228,7 +228,18 @@ class RemoteADI(BaseADI):
     async def request_otp(self, ds_id: int = c_ulonglong(-2).value) -> OneTimePassword:
         assert self._adi_pb is not None, "Machine must be provisioned to request OTP"
 
-        identifier = uuid.UUID(self._identifier).bytes
+        try:
+            identifier = uuid.UUID(self._identifier).bytes
+        except (ValueError, TypeError):
+            msg = (
+                f"Identifier must be a valid UUID string. Got: {self._identifier}\n\n"
+                "Note that older versions of the library generated a random identifier "
+                "that is incompatible with RemoteADI.\n"
+                "If this is the case for you, please either use LocalADI or re-provision "
+                "your device to obtain a valid identifier."
+            )
+            raise ValueError(msg) from None
+
         resp = await self._http.post(
             self.header_url,
             json={
@@ -534,8 +545,16 @@ class LocalADI(BaseADI):
     def _set_identifier(self, value: str) -> None:
         with self._get_vm() as vm:
             logger.debug("Setting identifier %s", value)
-            # TODO: validate that value is a valid UUID string
-            identifier = str(uuid.UUID(value))[:16].upper().encode()
+            # older versions of the library generated a random 16-byte string,
+            # but newer versions expect a UUID. We'll accept either in the local ADI.
+            try:
+                identifier = str(uuid.UUID(value))[:16].upper().encode()
+            except (ValueError, TypeError):
+                if len(value) != 16:
+                    msg = f"Identifier must be a valid UUID or a 16-character string. Got: {value}"
+                    raise ValueError(msg) from None
+                identifier = value.encode()
+
             p_identifier = vm.temp_alloc_data(identifier)
             vm.invoke_cdecl(self.__pADISetAndroidID, [p_identifier, len(identifier)])
             vm.temp_free(p_identifier)

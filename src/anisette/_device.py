@@ -32,13 +32,15 @@ class Device:
 
     @classmethod
     def from_json(cls, data: DeviceState) -> Self:
-        return cls(
-            client_info=data[cls._CLIENT_INFO_KEY],
-            user_agent=data[cls._USER_AGENT_KEY],
-            device_uuid=data[cls._DEVICE_UUID_KEY],
-            adi_id=data[cls._ADI_ID_KEY],
-            local_user_uuid=data[cls._LOCAL_USER_UUID_KEY],
-        )
+        params = {
+            "client_info": data.get(cls._CLIENT_INFO_KEY),
+            "user_agent": data.get(cls._USER_AGENT_KEY),
+            "device_uuid": data.get(cls._DEVICE_UUID_KEY),
+            "adi_id": data.get(cls._ADI_ID_KEY),
+            "local_user_uuid": data.get(cls._LOCAL_USER_UUID_KEY),
+        }
+
+        return cls(**{k: v for k, v in params.items() if v is not None})
 
     def to_json(self) -> DeviceState:
         return {
