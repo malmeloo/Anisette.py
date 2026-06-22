@@ -9,7 +9,6 @@ from fastapi import FastAPI, WebSocket
 from pydantic import BaseModel
 
 from anisette import AnisetteHeaders, AsyncAnisetteProvider, Device, LocalADI
-from anisette._util import open_file
 
 from ._session import SessionManager
 
@@ -22,6 +21,11 @@ app = FastAPI()
 
 sessions = SessionManager(AsyncAnisetteProvider)
 logger = logging.getLogger(__name__)
+
+fallback_ani = sessions.get(
+    _FALLBACK_SESSION_NAME,
+    adi_factory=LocalADI.create(),
+)
 
 
 class _V3HeaderRequest(BaseModel):
@@ -38,7 +42,7 @@ async def _get_local_adi(identifier: str, adi_pb: bytes | None) -> LocalADI:
 
     if libs_path is None:
         lib_store = await adi.get_library_store()
-        with open_file(sessions.libs_path, "wb+") as f:
+        with sessions.libs_path.open("wb+") as f:
             lib_store.save(f)
 
     return adi
@@ -49,11 +53,7 @@ async def get_legacy_session() -> AnisetteHeaders:
     """Handle legacy requests (plain HTTP to root)."""
     logger.info("Handling legacy request")
 
-    ani = sessions.get(_FALLBACK_SESSION_NAME)
-    headers = await ani.get_headers()
-    sessions.save(_FALLBACK_SESSION_NAME, ani)
-
-    return headers
+    return await fallback_ani.get_headers()
 
 
 @app.post("/v3/get_headers")

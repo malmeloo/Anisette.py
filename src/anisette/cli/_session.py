@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Generic, TypeVar
 
 from anisette import BaseAnisetteProvider
+from anisette._adi import ADIFactory
 
 from ._exceptions import _AniError
 
@@ -109,7 +110,7 @@ class SessionManager(Generic[_T]):
 
             del data["sessions"][name]
 
-    def get(self, name: str) -> _T:
+    def get(self, name: str, adi_factory: ADIFactory | None = None) -> _T:
         with self._get_session_json() as data:
             if name not in data["sessions"]:
                 msg = f"Session with name '{name}' does not exist"
@@ -117,7 +118,7 @@ class SessionManager(Generic[_T]):
 
             session_data = data["sessions"][name]
 
-        return self._prov_cls.from_json(session_data)
+        return self._prov_cls.from_json(session_data, adi_factory=adi_factory)
 
     def list(self) -> list[tuple[str, _T]]:
         with self._get_session_json() as data:
