@@ -38,9 +38,6 @@ dev = [
 test = ["psutil>=7.0.0", "pytest>=8.4.2"]
 
 [tool.pyright]
-venvPath = "."
-venv = ".venv"
-
 typeCheckingMode = "standard"
 reportImplicitOverride = true
 
