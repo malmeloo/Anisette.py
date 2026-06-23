@@ -10,7 +10,6 @@ from elftools.elf.sections import SymbolTableSection
 from typing_extensions import Self
 
 from ._arch import Architecture
-from ._fs import VirtualFileSystem
 
 if TYPE_CHECKING:
     from elftools.elf.elffile import ELFFile
@@ -75,22 +74,25 @@ class Library:
         return sym.name
 
 
-class LibraryStore(VirtualFileSystem):
+class LibraryStore:
     _LIBRARIES = (
         "libstoreservicescore.so",
         "libCoreADI.so",
     )
     _ARCH = Architecture.ARM64
 
-    def __init__(self, fs: VirtualFileSystem | None) -> None:
-        super().__init__(fs)
+    def __init__(self, libraries: dict[str, bytes] | None = None) -> None:
+        self._libs = libraries or {}
 
-    def open_library(self, name: str) -> IO:
-        return self.easy_open(name, "rb")
+    def add_library(self, name: str, data: bytes) -> None:
+        self._libs[name] = data
 
-    def add_library(self, name: str, data: IO[bytes]) -> None:
-        with self.easy_open(name, "wb+") as f:
-            f.write(data.read())
+    def get_library(self, name: str) -> bytes:
+        lib = self._libs.get(name)
+        if lib is None:
+            msg = f"Library '{name}' not found"
+            raise FileNotFoundError(msg)
+        return lib
 
     @staticmethod
     def _candidates_for(lib: str, arch: Architecture) -> tuple[str, str, str]:
@@ -113,7 +115,7 @@ class LibraryStore(VirtualFileSystem):
                             if data is None:
                                 continue
                             with data:
-                                lib_store.add_library(lib, data)
+                                lib_store.add_library(lib, data.read())
                             break
                     else:
                         msg = "Archive is missing library file: %s"
@@ -132,7 +134,7 @@ class LibraryStore(VirtualFileSystem):
                     for path in cls._candidates_for(lib, cls._ARCH):
                         if path in names:
                             with zf.open(path, "r") as data:
-                                lib_store.add_library(lib, data)
+                                lib_store.add_library(lib, data.read())
                             break
                     else:
                         msg = "Archive is missing library file: %s"
@@ -143,12 +145,10 @@ class LibraryStore(VirtualFileSystem):
             return True
 
     @classmethod
-    def from_file(cls, file: BinaryIO) -> Self:
+    def from_bytes(cls, data: bytes) -> Self:
         """Load libraries from a tar or zip archive using only stdlib."""
-        lib_store = cls(None)
+        lib_store = cls()
 
-        # Buffer the file so we can attempt multiple formats without relying on seekability.
-        data = file.read()
         buf1 = io.BytesIO(data)
         if cls._load_from_tar(buf1, lib_store):
             return lib_store
@@ -159,3 +159,11 @@ class LibraryStore(VirtualFileSystem):
 
         msg = "Unknown file format"
         raise TypeError(msg)
+
+    def save(self, file: IO[bytes]) -> None:
+        """Save libraries to a tar archive using only stdlib."""
+        with tarfile.open(fileobj=file, mode="w") as tf:
+            for name, data in self._libs.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))

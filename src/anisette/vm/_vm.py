@@ -3,7 +3,7 @@ from __future__ import annotations
 import io as _io
 import logging
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from elftools.elf.elffile import ELFFile
 from elftools.elf.relocation import RelocationSection
@@ -41,7 +41,7 @@ from ._library import (
 )
 
 if TYPE_CHECKING:
-    from ._fs import VirtualFileSystem
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,11 @@ IMPORT_SIZE = 0x1000
 
 
 class VM:
-    def __init__(self, uc: Uc, fs: VirtualFileSystem, lib_store: LibraryStore) -> None:
+    def __init__(self, uc: Uc, lib_store: LibraryStore, adi_pb: bytes | None = None) -> None:
         self._uc = uc
-        self._fs = fs
-
         self._lib_store = lib_store
+        self._adi_pb: bytes | None = adi_pb
+
         self._loaded_libs: dict[str, Library] = OrderedDict()
 
         self._temp_allocator = Allocator(TEMP_ADDRESS, TEMP_SIZE)
@@ -82,18 +82,26 @@ class VM:
         )
 
     @property
+    def adi_pb(self) -> bytes | None:
+        return self._adi_pb
+
+    @adi_pb.setter
+    def adi_pb(self, adi_pb: bytes | None) -> None:
+        self._adi_pb = adi_pb
+
+    @property
     def errno_address(self) -> int | None:
         return self._errno_address
 
     def wrap_hook(self, hook: Callable) -> Callable:
         def _new_hook(_uc: Uc, *args: Any) -> None:  # noqa: ANN401
-            ctx = HookContext(vm=self, fs=self._fs)
+            ctx = HookContext(vm=self)
             return hook(ctx, *(args[:-1]))
 
         return _new_hook
 
     @classmethod
-    def create(cls, fs: VirtualFileSystem, lib_store: LibraryStore, arch: Architecture) -> VM:
+    def create(cls, lib_store: LibraryStore, arch: Architecture, adi_pb: bytes | None = None) -> VM:
         # Startup a unicorn-engine instance as VM backend
         if arch == Architecture.X86:
             uc = Uc(UC_ARCH_X86, UC_MODE_32)
@@ -119,7 +127,7 @@ class VM:
         # Register a fake stack
         uc.mem_map(STACK_ADDRESS, STACK_SIZE)
 
-        vm = cls(uc, fs, lib_store)
+        vm = cls(uc, lib_store, adi_pb)
 
         # Debug hooks
         uc.hook_add(UC_HOOK_BLOCK, vm.wrap_hook(hook_block))
@@ -271,10 +279,9 @@ class VM:
             return self._loaded_libs[name]
 
         library_index = len(self._loaded_libs)
-        with self._lib_store.open_library(name) as f:
-            elf_data = f.read()
-            # Construct ELF from an in-memory buffer to avoid lifecycle issues of the context-managed stream
-            elf = ELFFile(_io.BytesIO(elf_data))
+
+        lib_data = self._lib_store.get_library(name)
+        elf = ELFFile(_io.BytesIO(lib_data))
 
         chosen_base = self._lib_allocator.alloc(0x10000000)[0]
 
@@ -332,7 +339,7 @@ class VM:
             if segment["p_type"] == "PT_LOAD":
                 data = (
                     b"\x00" * padding_before_size
-                    + elf_data[data_offset : data_offset + data_size]
+                    + lib_data[data_offset : data_offset + data_size]
                     + b"\x00" * padding_after_size
                 )
                 self._uc.mem_map(address_start, len(data))

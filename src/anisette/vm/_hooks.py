@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import secrets
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -21,7 +22,6 @@ from ._structs import c_stat, c_timeval
 from ._util import s_to_u64
 
 if TYPE_CHECKING:
-    from ._fs import VirtualFileSystem
     from ._vm import VM
 
 logger = logging.getLogger(__name__)
@@ -29,11 +29,13 @@ logger = logging.getLogger(__name__)
 IMPORT_ADDRESS = 0xA0000000
 IMPORT_SIZE = 0x1000
 
+# chosen with fair dice roll
+ADIPB_FILDES = 69
+
 
 @dataclass()
 class HookContext:
     vm: VM
-    fs: VirtualFileSystem
 
 
 def _hook_empty_stub(ctx: HookContext, orig_name: str | None = None) -> None:
@@ -89,12 +91,6 @@ def _hook_mkdir(ctx: HookContext) -> None:
 
     logger.debug("mkdir('%s', %s)", path, oct(mode))
 
-    assert path in [
-        "./anisette",
-    ]
-    assert mode == 0o777
-    ctx.fs.mkdir(path)  # FIXME: mode?
-
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
 
@@ -121,33 +117,41 @@ def _hook_chmod(ctx: HookContext) -> None:
 
 
 def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
-    try:
-        stat_result = ctx.fs.stat(path_or_fd)
-        # print(statResult)
-    except FileNotFoundError:
-        logger.debug("Unable to stat '%s'", path_or_fd)
-        ctx.vm.reg_write(UC_ARM64_REG_X0, s_to_u64(-1))
-        ctx.vm.set_errno(2)  # ENOENT
-        return
+    logger.debug("stat(0x%X, 0x%X)", path_or_fd, buf)
+
+    if path_or_fd in [ADIPB_FILDES, "./adi.pb"]:
+        if ctx.vm.adi_pb is None:
+            ctx.vm.reg_write(UC_ARM64_REG_X0, s_to_u64(-1))
+            ctx.vm.set_errno(2)  # ENOENT
+            return
+
+        st_mode = 33188
+        st_size = len(ctx.vm.adi_pb)
+    elif path_or_fd == ".":
+        st_mode = 16877
+        st_size = 4096
+    else:
+        msg = f"Unsupported path_or_fd: {path_or_fd!r}"
+        raise AssertionError(msg)
 
     stat = c_stat(
         st_dev=0,
         st_ino=0,
-        st_mode=stat_result.st_mode,
+        st_mode=st_mode,
         # ...
-        st_size=stat_result.st_size,
+        st_size=st_size,
         st_blksize=512,
-        st_blocks=(stat_result.st_size + 511) // 512,
-        # ...s
+        st_blocks=(st_size + 511) // 512,
+        # ...
     )
-    stat.__byte = stat_result.st_size  # noqa: SLF001
+    stat.__byte = st_size  # noqa: SLF001
     stat_bytes = bytes(stat)
     # print(statBytes.hex(), len(statBytes))
 
     # logger.debug("%s %s %s", stat_result.st_size, stat_result.st_blksize, stat_result.st_blocks)
-    logger.debug("%s %s %s", stat.st_size, stat.st_blksize, stat.st_blocks)
+    # logger.debug("%s %s %s", stat.st_size, stat.st_blksize, stat.st_blocks)
 
-    logger.debug("0x%X = %d", stat_result.st_mode, stat_result.st_mode)
+    # logger.debug("0x%X = %d", stat_result.st_mode, stat_result.st_mode)
     stat_bytes = b"".join(
         [
             bytes.fromhex(
@@ -156,7 +160,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
                 "00000000"
                 "00000000",
             )  # st_ino
-            + int.to_bytes(stat_result.st_mode, 4, "little")  # st_mode
+            + int.to_bytes(st_mode, 4, "little")  # st_mode
             + bytes.fromhex(
                 "00000000"  # st_nlink
                 "a4810000"  # st_uid
@@ -166,7 +170,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
                 "00000000"
                 "00000000",
             ),  # __pad1
-            int.to_bytes(stat_result.st_size, 8, "little"),  # st_size
+            int.to_bytes(st_size, 8, "little"),  # st_size
             bytes.fromhex(
                 "00000000"  # st_blksize
                 "00000000"  # __pad2
@@ -191,7 +195,7 @@ def _handle_stat(ctx: HookContext, path_or_fd: str | int, buf: int) -> None:
             ),
         ],
     )
-    logger.debug(len(stat_bytes))
+    # logger.debug(len(stat_bytes))
     assert len(stat_bytes) in [104, 128]
 
     ctx.vm.mem_write(buf, stat_bytes)
@@ -233,12 +237,10 @@ def _hook_open(ctx: HookContext) -> None:
     mode = x2
 
     logger.debug("open('%s', %s, %s)", path, oct(oflag), oct(mode))
-    # time.sleep(2.0)
-    # assert(False)
 
-    # Return fildes
-    fildes = ctx.fs.open(path, oflag)
-    ctx.vm.reg_write(UC_ARM64_REG_X0, fildes)
+    assert path == "./adi.pb"
+
+    ctx.vm.reg_write(UC_ARM64_REG_X0, ADIPB_FILDES)
 
 
 def _hook_ftruncate(ctx: HookContext) -> None:
@@ -250,7 +252,9 @@ def _hook_ftruncate(ctx: HookContext) -> None:
 
     logger.debug("ftruncate(%d, %d)", fildes, length)
 
-    ctx.fs.truncate(fildes, length)
+    assert fildes == ADIPB_FILDES
+
+    ctx.vm.adi_pb = b""
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
@@ -266,8 +270,11 @@ def _hook_read(ctx: HookContext) -> None:
 
     logger.debug("read(%d, 0x%X, %d)", fildes, buf, nbyte)
 
-    buf_bytes = ctx.fs.read(fildes, nbyte)
-    ctx.vm.mem_write(buf, buf_bytes)
+    assert fildes == ADIPB_FILDES
+    assert ctx.vm.adi_pb is not None
+    assert nbyte == len(ctx.vm.adi_pb)
+
+    ctx.vm.mem_write(buf, ctx.vm.adi_pb)
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, nbyte)
 
@@ -283,8 +290,10 @@ def _hook_write(ctx: HookContext) -> None:
 
     logger.debug("write(%d, 0x%X, %d)", fildes, buf, nbyte)
 
+    assert fildes == ADIPB_FILDES
+
     buf_bytes = ctx.vm.mem_read(buf, nbyte)
-    ctx.fs.write(fildes, buf_bytes)
+    ctx.vm.adi_pb = buf_bytes
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, nbyte)
 
@@ -294,7 +303,9 @@ def _hook_close(ctx: HookContext) -> None:
 
     fildes = x0
 
-    ctx.fs.close(fildes)
+    logger.debug("close(%d)", fildes)
+
+    assert fildes == ADIPB_FILDES
 
     ctx.vm.reg_write(UC_ARM64_REG_X0, 0)
 
@@ -306,9 +317,7 @@ def _hook_dlopen_wrapper(ctx: HookContext) -> None:
 
     logger.debug("dlopen('%s' (%s))", path, library_name)
 
-    assert library_name in [
-        "libCoreADI.so",
-    ]
+    assert library_name == "libCoreADI.so"
 
     library = ctx.vm.load_library(library_name)
     x0 = library.index
@@ -401,7 +410,7 @@ def _hook_system_property_get_impl(ctx: HookContext) -> None:
 
 
 def _hook_arc4random_impl(ctx: HookContext) -> None:
-    value = 0xDEADBEEF  # "Random number, chosen by fair dice roll"
+    value = int.from_bytes(secrets.token_bytes(4), "big")
     ctx.vm.reg_write(UC_ARM64_REG_X0, value)
 
 

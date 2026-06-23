@@ -2,30 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import locale
 import logging
-from contextlib import ExitStack
-from ctypes import c_ulonglong
+from abc import ABC, abstractmethod
+from collections.abc import Coroutine
 from datetime import datetime
-from typing import TYPE_CHECKING, BinaryIO, TypedDict
+from typing import TYPE_CHECKING, BinaryIO, TypeAlias, TypedDict, TypeVar, override
 
 from typing_extensions import Self
 
-from ._ani_provider import AnisetteProvider
-from ._fs import FSCollection
-from ._library import LibraryStore
+from anisette._session import ProvisioningSession
+
+from ._adi import ADIFactory, BaseADI, LocalADI, RemoteADI
+from ._device import Device
 from ._util import open_file
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from ._device import AnisetteDeviceConfig
+    from ._adi import OneTimePassword
+    from ._device import DeviceState
 
-
-DEFAULT_LIBS_URL = "https://anisette.dl.mikealmel.ooo/libs?arch=arm64-v8a"
 
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+_MaybeCoro: TypeAlias = _T | Coroutine[None, None, _T]
 
 
 AnisetteHeaders = TypedDict(
@@ -45,177 +49,286 @@ AnisetteHeaders = TypedDict(
 )
 
 
-def _get_libs(file: BinaryIO | str | Path | None = None) -> LibraryStore:
-    file = file or DEFAULT_LIBS_URL
+class AnisetteState(TypedDict):
+    """The JSON-serializable state of an Anisette session."""
 
-    with open_file(file, "rb") as f:
-        return LibraryStore.from_file(f)
+    device: DeviceState
+    adi_pb: str | None
 
 
-class Anisette:
-    """
-    The main Anisette provider class.
+class BaseAnisetteProvider(ABC):
+    """Base Anisette class."""
 
-    This is the main Anisette provider class, which provides the user-facing functionality of this package.
-    Each instance of :class:`Anisette` represents a single Anisette session.
+    DEFAULT_ADI: type[BaseADI] = RemoteADI
 
-    This class should not be instantiated directly through its __init__ method.
-    Instead, you should use :meth:`Anisette.init` or :meth:`Anisette.load` depending on your use case.
-    """
-
-    def __init__(self, ani_provider: AnisetteProvider) -> None:
+    def __init__(self, *, device: Device, adi: BaseADI) -> None:
         """
         Init.
 
         :meta private:
         """
-        self._ani_provider = ani_provider
-
-        self._ds_id = c_ulonglong(-2).value
+        self._adi = adi
+        self._session: ProvisioningSession = ProvisioningSession(adi, device)
 
     @property
-    def is_provisioned(self) -> bool:
-        """Whether this Anisette session has been provisioned yet or not."""
-        return self._ani_provider.adi.is_machine_provisioned(self._ds_id)
+    def device(self) -> Device:
+        """The virtual device associated with this Anisette session."""
+        return self._session.device
 
     @classmethod
     def init(
         cls,
-        file: BinaryIO | str | Path | None = None,
-        default_device_config: AnisetteDeviceConfig | None = None,
+        device: Device | None = None,
+        adi_factory: ADIFactory[BaseADI] | None = None,
     ) -> Self:
         """
-        Initialize a new Anisette session from an Apple Music APK or Anisette.py library file.
+        Initialize a new Anisette session.
 
-        The file type will be detected automatically. If :param:`file` is not provided, a library
-        bundle will be downloaded automatically. This file is usually a few megabytes large.
+        Device details can not be changed after initialization. If not provided, a random new device will be generated.
 
-        :param file: A file, path or URL to a library file or Apple Music APK.
-        :type file: BinaryIO, str, Path, None
-        :return: An instance of :class:`Anisette`.
-        :rtype: :class:`Anisette`
+        A library store can be provided to speed up initialization.
+        It should point to a tar or zip bundle containing the neceessary library files.
+        Such a bundle can be obtained using the
+        :py:meth:`~anisette.anisette.BaseAnisetteProvider.save_libs` method.
+        If not provided, libraries will be fetched from a public endpoint.
+
+        :param device: The virtual device to use with this Anisette session.
+        :type device: Device, None
+        :param library_store: A file or path to a library file or Apple Music APK.
+        :type library_store: LibraryStore, BinaryIO, str, Path, None
+        :return: An instance of the provider class.
+        :rtype: BaseAnisetteProvider
         """
-        ani_provider = AnisetteProvider(
-            FSCollection(),
-            lambda: _get_libs(file),
-            default_device_config,
-        )
-        return cls(ani_provider)
+        device = device or Device()
+        adi_factory = adi_factory or cls.DEFAULT_ADI.create()
+
+        adi = adi_factory(device.adi_id, None)
+
+        return cls(device=device, adi=adi)
 
     @classmethod
-    def load(cls, *files: BinaryIO | str | Path, default_device_config: AnisetteDeviceConfig | None = None) -> Self:
+    def load(
+        cls,
+        device: Device,
+        adi_pb: bytes,
+        adi_factory: ADIFactory[BaseADI] | None = None,
+    ) -> Self:
         """
         Load a previously-initialized Anisette session.
 
-        Required files can be obtained using the :meth:`Anisette.save_provisioning`, :meth:`Anisette.save_libs`
-        and/or :meth:`Anisette.save_all` methods.
+        Given a previously initialized session, the necessary parameters can be obtained using
+        :py:attr:`~anisette.anisette.BaseAnisetteProvider.device`,
+        :py:attr:`~anisette.anisette.BaseAnisetteProvider.adi_pb`,
+        and :py:meth:`~anisette.anisette.BaseAnisetteProvider.save_libs`.
 
-        :param files: File objects or paths that together form the provider's virtual file system.
-        :type files: BinaryIO, str, Path
-        :return: An instance of :class:`Anisette`.
-        :rtype: :class:`Anisette`
+        Consider using :py:meth:`~anisette.anisette.BaseAnisetteProvider.from_json` instead if it suits your needs.
+
+        :param device: The virtual device associated with this Anisette session.
+        :type device: Device
+        :param adi_pb: The ADI provisioning data for this Anisette session.
+        :type adi_pb: bytes
+        :param library_store: A file or path to a library file or Apple Music APK.
+        :type library_store: LibraryStore, BinaryIO, str, Path, None
+        :return: An instance of the provider class.
+        :rtype: BaseAnisetteProvider
         """
-        with ExitStack() as stack:
-            file_objs = [stack.enter_context(open_file(f, "rb")) for f in files]
-            ani_provider = AnisetteProvider.load(
-                *file_objs,
-                fs_fallback=lambda: _get_libs(),
-                default_device_config=default_device_config,
-            )
+        adi_factory = adi_factory or cls.DEFAULT_ADI.create()
+        adi = adi_factory(device.adi_id, adi_pb)
 
-        return cls(ani_provider)
+        return cls(device=device, adi=adi)
 
-    def save_provisioning(self, file: BinaryIO | str | Path) -> None:
+    def to_json(self) -> AnisetteState:
         """
-        Save provisioning data of this Anisette session to a file.
+        Serialize this Anisette session to a JSON-serializable dictionary.
 
-        The size of this file is usually in the order of kilobytes.
-
-        Saving provisioning data is required if you want to re-use this session at a later time.
-
-        A session may be reconstructed from saved data using the :meth:`Anisette.load` method.
-
-        The advantage of using this method over :meth:`Anisette.save_all` is that it results in less overall disk usage
-        when saving many sessions, since library data can be saved separately and may be re-used across sessions.
-
-        :param file: The file or path to save provisioning data to.
-        :type file: BinaryIO, str, Path
+        :return: A JSON-serializable dictionary containing the necessary data to restore this session later.
+        :rtype: dict
         """
-        self.provision()
+        adi_pb = self._session.adi_pb
+        if adi_pb is not None:
+            adi_pb = base64.b64encode(adi_pb).decode()
 
-        with open_file(file, "wb+") as f:
-            self._ani_provider.save(f, exclude=["libs"])
+        return {
+            "device": self.device.to_json(),
+            "adi_pb": adi_pb,
+        }
 
-    def save_libs(self, file: BinaryIO | str | Path) -> None:
+    @classmethod
+    def from_json(cls, data: AnisetteState, adi_factory: ADIFactory[BaseADI] | None = None) -> Self:
         """
-        Save library data to a file.
+        Deserialize an Anisette session from a JSON-serializable dictionary.
 
-        The size of this file is usually in the order of megabytes.
+        The input should be a dictionary containing the necessary data to restore a previously saved session,
+        such as one returned by :py:meth:`~anisette.anisette.BaseAnisetteProvider.to_json`.
 
-        Library data is session-agnostic and may be used in as many sessions as you wish.
-        It can also be used to initialize a new session, without requiring the full Apple Music APK.
-
-        The advantage of using this method over :meth:`Anisette.save_all` is that it results in less overall disk usage
-        when saving many sessions, since library data can be saved separately and may be re-used across sessions.
-
-        :param file: The file or path to save library data to.
-        :type file: BinaryIO, str, Path
+        :param data: A JSON-serializable dictionary containing the necessary data to restore a session.
+        :type data: dict
+        :return: An instance of the provider class.
+        :rtype: BaseAnisetteProvider
         """
-        # force fetch of library store to make sure it exists when saving
-        _ = self._ani_provider.library_store
+        device = Device.from_json(data["device"])
+        adi_pb = data.get("adi_pb")
 
-        with open_file(file, "wb+") as f:
-            self._ani_provider.save(f, include=["libs"])
+        if adi_pb is None:
+            return cls.init(device=device, adi_factory=adi_factory)
 
-    def save_all(self, file: BinaryIO | str | Path) -> None:
+        return cls.load(device, base64.b64decode(adi_pb), adi_factory)
+
+    @abstractmethod
+    def is_provisioned(self) -> _MaybeCoro[bool]:
+        """Whether this Anisette session has been provisioned yet or not."""
+        raise NotImplementedError
+
+    @property
+    @abstractmethod
+    def adi_pb(self) -> _MaybeCoro[bytes | None]:
         """
-        Save a complete copy of this Anisette session to a file.
+        ADI provisioning data for this Anisette session.
 
-        The size of this file is usually in the order of megabytes.
-
-        Saving session data is required if you want to re-use this session at a later time.
-
-        A session may be reconstructed from saved data using the :meth:`Anisette.load` method.
-
-        The advantage of using this method over :meth:`Anisette.save_provisioning` and :meth:`Anisette.save_libs`
-        is that it is easier to use, since all information to reconstruct the session is contained in a single file.
-
-        :param file: The file or path to save session data to.
-        :type file: BinaryIO, str, Path
+        :return: ADI provisioning data for this Anisette session.
+        :rtype: bytes
         """
-        with open_file(file, "wb+") as f:
-            self._ani_provider.save(f)
+        raise NotImplementedError
 
-    def provision(self) -> None:
+    @abstractmethod
+    def provision(self) -> _MaybeCoro[None]:
         """
         Provision the virtual device, if it has not been provisioned yet.
 
-        In most cases it is not necessary to manually use this method, since :meth:`Anisette.get_data`
-        will call it implicitly.
+        In most cases it is not necessary to manually use this method, since
+        :py:meth:`~anisette.anisette.BaseAnisetteProvider.get_headers` will call it implicitly.
         """
-        if not self.is_provisioned:
-            logger.info("Provisioning...")
-            self._ani_provider.provisioning_session.provision(self._ds_id)
+        raise NotImplementedError
 
-    def get_data(self) -> AnisetteHeaders:
+    @abstractmethod
+    def get_headers(self) -> _MaybeCoro[AnisetteHeaders]:
         """
         Obtain Anisette headers for this session.
 
         :return: Anisette headers that may be used for authentication purposes.
         """
-        self.provision()
-        otp = self._ani_provider.adi.request_otp(self._ds_id)
-        device = self._ani_provider.device
+        raise NotImplementedError
 
+    @abstractmethod
+    def save_libs(self, file: BinaryIO | str | Path) -> _MaybeCoro[None]:
+        """
+        Save library data to a file. The size of this file is usually in the order of megabytes.
+
+        Library data is session-agnostic and may be used in as many sessions as you wish.
+        It can also be used to initialize a new session, without requiring the full Apple Music APK.
+
+        :param file: The file or path to save library data to.
+        :type file: BinaryIO, str, Path
+        """
+        raise NotImplementedError
+
+    def _get_headers(self, otp: OneTimePassword) -> AnisetteHeaders:
         return {
             "X-Apple-I-Client-Time": datetime.now().astimezone().replace(microsecond=0).isoformat() + "Z",
             "X-Apple-I-MD": base64.b64encode(bytes(otp.otp)).decode(),
-            "X-Apple-I-MD-LU": base64.b64encode(str(device.local_user_uuid).encode()).decode(),
+            "X-Apple-I-MD-LU": base64.b64encode(str(self.device.local_user_uuid).encode()).decode(),
             "X-Apple-I-MD-M": base64.b64encode(bytes(otp.machine_id)).decode(),
             "X-Apple-I-MD-RINFO": "17106176",
             "X-Apple-I-SRL-NO": "0",
             "X-Apple-I-TimeZone": str(datetime.now().astimezone().tzinfo),
             "X-Apple-Locale": locale.getlocale()[0] or "en_US",
-            "X-MMe-Client-Info": device.server_friendly_description,
-            "X-Mme-Device-Id": device.unique_device_identifier,
+            "X-MMe-Client-Info": self.device.client_info,
+            "X-Mme-Device-Id": self.device.device_uuid,
         }
+
+
+class AsyncAnisetteProvider(BaseAnisetteProvider):
+    """
+    Async Anisette provider class.
+
+    This is the main Anisette provider class, which provides the user-facing functionality of this package.
+    Each instance of :class:`~anisette.anisette.AsyncAnisetteProvider` represents a single Anisette session.
+
+    This class should not be instantiated directly through its __init__ method.
+    Instead, you should use :py:meth:`~anisette.anisette.AsyncAnisetteProvider.init` or
+    :py:meth:`~anisette.anisette.AsyncAnisetteProvider.load` depending on your use case.
+    """
+
+    @property
+    @override
+    def adi_pb(self) -> bytes | None:
+        return self._session.adi_pb
+
+    @override
+    async def is_provisioned(self) -> bool:
+        return await self._session.is_provisioned()
+
+    @override
+    async def provision(self) -> None:
+        if not await self.is_provisioned():
+            await self._session.provision()
+
+    @override
+    async def save_libs(self, file: BinaryIO | str | Path) -> None:
+        if not isinstance(self._adi, LocalADI):
+            msg = "Library data is only available for local ADI sessions."
+            raise RuntimeError(msg)  # noqa: TRY004
+
+        libs = await self._adi.get_library_store()
+
+        with open_file(file, "wb+") as f:
+            libs.save(f)
+
+    @override
+    async def get_headers(self) -> AnisetteHeaders:
+        await self.provision()
+
+        otp = await self._session.request_otp()
+        return self._get_headers(otp)
+
+
+class AnisetteProvider(BaseAnisetteProvider):
+    """
+    Sync Anisette provider class.
+
+    This is the main Anisette provider class, which provides the user-facing functionality of this package.
+    Each instance of :class:`~anisette.anisette.AnisetteProvider` represents a single Anisette session.
+
+    This class should not be instantiated directly through its __init__ method.
+    Instead, you should use :py:meth:`~anisette.anisette.AnisetteProvider.init` or
+    :py:meth:`~anisette.anisette.AnisetteProvider.load` depending on your use case.
+    """
+
+    def __init__(self, *, device: Device, adi: BaseADI) -> None:  # noqa: D107
+        super().__init__(device=device, adi=adi)
+
+        self._async_prov = AsyncAnisetteProvider(device=device, adi=adi)
+
+        try:
+            self._evt_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._evt_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._evt_loop)
+
+    @property
+    @override
+    def adi_pb(self) -> bytes | None:
+        return self._session.adi_pb
+
+    @override
+    def is_provisioned(self) -> bool:
+        coro = self._async_prov.is_provisioned()
+        return self._evt_loop.run_until_complete(coro)
+
+    @override
+    def provision(self) -> None:
+        coro = self._async_prov.provision()
+        return self._evt_loop.run_until_complete(coro)
+
+    @override
+    def save_libs(self, file: BinaryIO | str | Path) -> None:
+        coro = self._async_prov.save_libs(file)
+        self._evt_loop.run_until_complete(coro)
+
+    @override
+    def get_headers(self) -> AnisetteHeaders:
+        coro = self._async_prov.get_headers()
+        return self._evt_loop.run_until_complete(coro)
+
+    def __del__(self) -> None:
+        self._evt_loop.close()
