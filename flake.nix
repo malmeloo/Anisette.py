@@ -79,7 +79,8 @@
         in
         {
           default = pythonSet.default.mkVirtualEnv "anisette" workspace.deps.default;
-          dev = pythonSet.dev.mkVirtualEnv "anisette-dev-env" workspace.deps.all;
+          dev = pythonSet.dev.mkVirtualEnv "anisette-dev" workspace.deps.all;
+          test = pythonSet.default.mkVirtualEnv "anisette-test" workspace.deps.all;
         }
       );
 
@@ -159,7 +160,9 @@
       );
 
       packages = forAllSystems (system: {
-        default = pythonSets.${system}.default.mkVirtualEnv "anisette" workspace.deps.default;
+        default = venvs.${system}.default;
+        dev = venvs.${system}.dev;
+        test = venvs.${system}.test;
       });
     };
 }
