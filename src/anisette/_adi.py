@@ -98,7 +98,7 @@ class BaseADI(ABC):
 
     @classmethod
     @abstractmethod
-    def create(cls) -> ADIFactory[Self]:
+    def create(cls, url: str | None = None, /) -> ADIFactory[Self]:
         raise NotImplementedError
 
     @property

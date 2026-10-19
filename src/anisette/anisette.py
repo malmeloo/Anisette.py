@@ -9,15 +9,15 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Coroutine
 from datetime import datetime
-from typing import TYPE_CHECKING, BinaryIO, TypeAlias, TypedDict, TypeVar, override
+from typing import TYPE_CHECKING, BinaryIO, TypeAlias, TypedDict, TypeVar
 
-from typing_extensions import Self
+from typing_extensions import Self, override
 
-from anisette._session import ProvisioningSession
-
-from ._adi import ADIFactory, BaseADI, LocalADI, RemoteADI
+from ._adi import ADIFactory, BaseADI, LocalADI
 from ._device import Device
+from ._session import ProvisioningSession
 from ._util import open_file
+from .macos import MacOSADI
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,7 +59,7 @@ class AnisetteState(TypedDict):
 class BaseAnisetteProvider(ABC):
     """Base Anisette class."""
 
-    DEFAULT_ADI: type[BaseADI] = RemoteADI
+    DEFAULT_ADI: type[BaseADI] = MacOSADI
 
     def __init__(self, *, device: Device, adi: BaseADI) -> None:
         """
@@ -80,27 +80,29 @@ class BaseAnisetteProvider(ABC):
         cls,
         device: Device | None = None,
         adi_factory: ADIFactory[BaseADI] | None = None,
+        *,
+        url: str | None = None,
     ) -> Self:
         """
         Initialize a new Anisette session.
 
         Device details can not be changed after initialization. If not provided, a random new device will be generated.
 
-        A library store can be provided to speed up initialization.
-        It should point to a tar or zip bundle containing the neceessary library files.
-        Such a bundle can be obtained using the
-        :py:meth:`~anisette.anisette.BaseAnisetteProvider.save_libs` method.
-        If not provided, libraries will be fetched from a public endpoint.
+        With a local backend, url overrides the library download mirror.
+        None uses that backend's default URL. With RemoteADI, url selects the server.
 
         :param device: The virtual device to use with this Anisette session.
         :type device: Device, None
-        :param library_store: A file or path to a library file or Apple Music APK.
-        :type library_store: LibraryStore, BinaryIO, str, Path, None
+        :param url: Optional backend URL; None uses the existing default.
+        :type url: str, None
         :return: An instance of the provider class.
         :rtype: BaseAnisetteProvider
         """
         device = device or Device()
-        adi_factory = adi_factory or cls.DEFAULT_ADI.create()
+        if adi_factory is not None and url is not None:
+            msg = "Pass either url or adi_factory, not both."
+            raise ValueError(msg)
+        adi_factory = adi_factory or (cls.DEFAULT_ADI.create(url) if url is not None else cls.DEFAULT_ADI.create())
 
         adi = adi_factory(device.adi_id, None)
 
@@ -112,6 +114,8 @@ class BaseAnisetteProvider(ABC):
         device: Device,
         adi_pb: bytes,
         adi_factory: ADIFactory[BaseADI] | None = None,
+        *,
+        url: str | None = None,
     ) -> Self:
         """
         Load a previously-initialized Anisette session.
@@ -127,12 +131,15 @@ class BaseAnisetteProvider(ABC):
         :type device: Device
         :param adi_pb: The ADI provisioning data for this Anisette session.
         :type adi_pb: bytes
-        :param library_store: A file or path to a library file or Apple Music APK.
-        :type library_store: LibraryStore, BinaryIO, str, Path, None
+        :param url: Optional backend URL; None uses the existing default.
+        :type url: str, None
         :return: An instance of the provider class.
         :rtype: BaseAnisetteProvider
         """
-        adi_factory = adi_factory or cls.DEFAULT_ADI.create()
+        if adi_factory is not None and url is not None:
+            msg = "Pass either url or adi_factory, not both."
+            raise ValueError(msg)
+        adi_factory = adi_factory or (cls.DEFAULT_ADI.create(url) if url is not None else cls.DEFAULT_ADI.create())
         adi = adi_factory(device.adi_id, adi_pb)
 
         return cls(device=device, adi=adi)
@@ -154,7 +161,13 @@ class BaseAnisetteProvider(ABC):
         }
 
     @classmethod
-    def from_json(cls, data: AnisetteState, adi_factory: ADIFactory[BaseADI] | None = None) -> Self:
+    def from_json(
+        cls,
+        data: AnisetteState,
+        adi_factory: ADIFactory[BaseADI] | None = None,
+        *,
+        url: str | None = None,
+    ) -> Self:
         """
         Deserialize an Anisette session from a JSON-serializable dictionary.
 
@@ -170,9 +183,9 @@ class BaseAnisetteProvider(ABC):
         adi_pb = data.get("adi_pb")
 
         if adi_pb is None:
-            return cls.init(device=device, adi_factory=adi_factory)
+            return cls.init(device=device, adi_factory=adi_factory, url=url)
 
-        return cls.load(device, base64.b64decode(adi_pb), adi_factory)
+        return cls.load(device, base64.b64decode(adi_pb), adi_factory, url=url)
 
     @abstractmethod
     def is_provisioned(self) -> _MaybeCoro[bool]:
@@ -223,13 +236,15 @@ class BaseAnisetteProvider(ABC):
         raise NotImplementedError
 
     def _get_headers(self, otp: OneTimePassword) -> AnisetteHeaders:
+        # Use routing metadata when an ADI exposes it; keep the legacy default otherwise.
+        routing_information = getattr(self._adi, "routing_information", None)
         return {
-            "X-Apple-I-Client-Time": datetime.now().astimezone().replace(microsecond=0).isoformat() + "Z",
+            "X-Apple-I-Client-Time": datetime.now().astimezone().replace(microsecond=0).isoformat(),
             "X-Apple-I-MD": base64.b64encode(bytes(otp.otp)).decode(),
             "X-Apple-I-MD-LU": base64.b64encode(str(self.device.local_user_uuid).encode()).decode(),
             "X-Apple-I-MD-M": base64.b64encode(bytes(otp.machine_id)).decode(),
-            "X-Apple-I-MD-RINFO": "17106176",
-            "X-Apple-I-SRL-NO": "0",
+            "X-Apple-I-MD-RINFO": str(routing_information) if routing_information is not None else "17106176",
+            "X-Apple-I-SRL-NO": self.device.serial,
             "X-Apple-I-TimeZone": str(datetime.now().astimezone().tzinfo),
             "X-Apple-Locale": locale.getlocale()[0] or "en_US",
             "X-MMe-Client-Info": self.device.client_info,
@@ -280,6 +295,10 @@ class AsyncAnisetteProvider(BaseAnisetteProvider):
 
         otp = await self._session.request_otp()
         return self._get_headers(otp)
+
+    async def close(self) -> None:
+        """Close this provider's provisioning HTTP client."""
+        await self._session.close()
 
 
 class AnisetteProvider(BaseAnisetteProvider):

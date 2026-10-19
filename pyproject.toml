@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license-files = ["LICENSE"]
 dependencies = [
+    "macOS-ADI-emulator @ git+https://github.com/sacca97/os-findmy-e.git@main#subdirectory=macOS-ADI-emulator",
     "httpx>=0.28.1",
     "pyelftools>=0.33",
     "typing-extensions>=4.12.2,<5.0.0",
@@ -75,3 +76,6 @@ pythonpath = ["."]
 [build-system]
 requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+anisette = ["apple-root.pem"]

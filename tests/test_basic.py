@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
+import pytest
+
 from anisette import AnisetteProvider, LocalADI
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("ANISETTE_LIVE_TESTS") != "1",
+    reason="live Apple provisioning requires ANISETTE_LIVE_TESTS=1",
+)
 
 _PROV_JSON = Path(__file__).parent / ".prov.json"
 

@@ -13,22 +13,21 @@ See the docs for information on how to do this.
 
 ### Initialization
 
-The Anisette provider must be initialized with libraries from the Apple Music APK.
+The Anisette provider must be initialized with the macOS ADI library for x86-64.
 To save you some effort, a Cloudflare Worker has been set up to provide easy access to these libraries.
-By default, the Anisette.py will download this library bundle (~3 megabytes) when initializing a new session,
-but you can also provide an APK file or downloaded bundle yourself.
+By default, the Anisette.py will download this library bundle (~3.5 MB) when initializing a new session,
+but you can also provide the library yourself.
+
+Supported executable SHA-256:
+`4b6b320f08edcf5d65ed1141399b76a8d9323fee2045c577c5d2f30f35a5dae1`.
 
 ```python
-from anisette import Anisette
+from anisette import AnisetteProvider
 
-# First use: download from Cloudflare
-ani = Anisette.init()
+ani = AnisetteProvider.init(url="https://your-mirror.example/CoreADI.x86_64")
 
-# After download, save library bundle to disk
-ani.save_libs("libs.bin")
-
-# For future use, initialize from disk:
-ani2 = Anisette.init("libs.bin")
+# Use the default mirror:
+ani = AnisetteProvider.init(url=None)
 ```
 
 ### Getting Anisette data
